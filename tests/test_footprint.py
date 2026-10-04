@@ -299,3 +299,100 @@ def test_dotcom_candidate_requires_org_proof(monkeypatch):
                "evidence": {"registry_live": {"value": {"phone": "22334455", "business_address": {}}}}}
     found, _, _ = fio.discover_website(profile, collisions={"email_domain": {}, "phone": {"22334455": 1}, "address": {}})
     assert found is None
+
+
+def test_ac17_registry_site_reused_without_new_request(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: False)
+
+    def no_fetch(url, **kwargs):
+        raise AssertionError("the registry-declared site was already fetched")
+
+    monkeypatch.setattr(fio, "fetch_website", no_fetch)
+    prior = {"status": "available", "source_url": "https://www.secpro.as/", "source_class": "registry_linked_company_website",
+             "source_type": "registry_linked_company_website",
+             "value": {"requested_url": "https://www.secpro.as/", "final_url": "https://www.secpro.as/", "registered_domain": "secpro.as",
+                       "title": "SecPro", "identity_text_excerpt": "SecurityProducts AS · Org.nr 912 345 678", "pages": [], "social_links": [],
+                       "identity_assessment": {"status": "related_or_uncertain", "publishable": False}}}
+    profile = {"organisation_number": "912345678", "name": "SECURITYPRODUCTS AS", "evidence": {}}
+    found, discovery, metrics = fio.discover_website(profile, prior_record=prior)
+    assert found is not None and metrics["requests"] == 0
+    assert found["source_class"] == "registry_linked_company_website"
+    assert found["value"]["identity_assessment"]["publishable"] is True
+    assert prior["value"]["identity_assessment"]["publishable"] is False  # input record not mutated
+
+
+def test_ac17_registry_site_without_proof_stays_withheld(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: False)
+    monkeypatch.setattr(fio, "_fetch_secondary_page", lambda url, **kw: (None, [], 1, 0, 0, "HTTP 404"))
+    prior = {"status": "available", "source_url": "https://www.privatmegleren.no/",
+             "value": {"requested_url": "https://www.privatmegleren.no/", "final_url": "https://privatmegleren.no/", "registered_domain": "privatmegleren.no",
+                       "title": "PrivatMegleren", "identity_text_excerpt": "Bjørnefjorden eiendomsmegling", "pages": [], "social_links": []}}
+    profile = {"organisation_number": "912345678", "name": "BJØRNEFJORDEN AS", "evidence": {}}
+    found, _, _ = fio.discover_website(profile, prior_record=prior, collisions={"email_domain": {}, "phone": {}, "address": {}})
+    assert found is None
+
+
+def test_ac18_declared_extra_host_needs_org_number(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: host == "gaiaarkitekter.no")
+    monkeypatch.setattr(fio, "_fetch_secondary_page", lambda url, **kw: (None, [], 1, 0, 0, "HTTP 404"))
+
+    def fake_fetch(url, **kwargs):
+        return ({"status": "available", "source_url": url, "value": {
+            "final_url": "https://gaiaarkitekter.no/", "registered_domain": "gaiaarkitekter.no",
+            "title": "Gaia Lista arkitekter", "identity_text_excerpt": "Gaia Lista AS tlf 22 33 44 55", "pages": [], "social_links": []}},
+            {"requests": 2, "bytes": 10, "latencies_ms": [1]})
+
+    monkeypatch.setattr(fio, "fetch_website", fake_fetch)
+    profile = {"organisation_number": "912345678", "name": "GAIA LISTA AS",
+               "evidence": {"registry_live": {"value": {"phone": "22334455", "business_address": {}}}}}
+    found, discovery, _ = fio.discover_website(profile, extra_hosts=["gaiaarkitekter.no"],
+                                               collisions={"email_domain": {}, "phone": {"22334455": 1}, "address": {}})
+    assert found is None
+    assert discovery["value"]["candidates"][0] == "gaiaarkitekter.no"
+
+
+def test_ac19_homepage_first_secondary_pages():
+    from norway_company_agent.footprint.io import secondary_pages_for
+    decide = secondary_pages_for({"organisation_number": "810034882", "name": "SANDNES ELEKTRISKE AS"})
+    assert decide({"title": "Parked domain", "final_url": "https://sandneselektriske.no/"}) == 0
+    assert decide({"title": "Sandnes Elektriske – elektriker", "final_url": "https://sandneselektriske.no/"}) == 2
+    assert decide({"identity_text_excerpt": "Org.nr 810 034 882", "final_url": "https://x.no/"}) == 1
+
+
+def test_ac20_run_budget_stops_new_fetches(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: True)
+
+    def no_fetch(url, **kwargs):
+        raise AssertionError("budget said no")
+
+    monkeypatch.setattr(fio, "fetch_website", no_fetch)
+    found, discovery, metrics = fio.discover_website({"organisation_number": "912345678", "name": "FOO BAR AS", "evidence": {}}, can_spend=lambda: False)
+    assert found is None and metrics["requests"] == 0
+    assert discovery["value"]["attempts"][0]["result"] == "run_request_budget_exhausted"
+
+
+def test_ac21_only_first_generated_candidate_is_fetched(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: True)
+    fetched = []
+
+    def fake_fetch(url, **kwargs):
+        fetched.append(url)
+        return ({"status": "available", "source_url": url, "value": {"final_url": url, "registered_domain": url.split("/")[2],
+                 "title": "Something else", "pages": [], "social_links": []}}, {"requests": 2, "bytes": 1, "latencies_ms": [1]})
+
+    monkeypatch.setattr(fio, "fetch_website", fake_fetch)
+    profile = {"organisation_number": "912345678", "name": "SANDNES ELEKTRISKE AS",
+               "evidence": {"locations": {"value": {"locations": [{"name": "X", "website": "www.sandnes-el.no"}]}}}}
+    monkeypatch.setattr(fio, "_fetch_secondary_page", lambda url, **kw: (None, [], 1, 0, 0, "HTTP 404"))
+    fio.discover_website(profile, collisions={"email_domain": {}, "phone": {}, "address": {}})
+    assert fetched == ["https://sandnes-el.no/", "https://sandneselektriske.no/"]

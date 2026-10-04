@@ -48,6 +48,9 @@ def fetch_json(url: str, *, timeout: float = 20.0, attempts: int = 3) -> FetchRe
             last_error = f"HTTP {exc.code}"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             last_error = type(exc).__name__
+            if "budget exhausted" in str(getattr(exc, "reason", "")):
+                # Refused by the run's request budget before anything was sent: retrying cannot help.
+                return FetchResult(url, 0, 0, 0, error="request budget exhausted (not sent)", retrieved_at=_utc_now())
         if attempt + 1 < attempts:
             time.sleep(0.4 * (2**attempt))
     return FetchResult(url, 0, 0, 0, error=last_error, retrieved_at=_utc_now())

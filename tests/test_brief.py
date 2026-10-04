@@ -49,3 +49,18 @@ def test_no_percentage_across_zero():
         "external_claims": []}
     texts = " ".join(s["text"] for s in company_brief(profile)["sentences"])
     assert "annual result -NOK 36 → NOK 2 k." in texts
+
+
+def test_brief_registered_activity_and_budget_unknown():
+    profile = {"organisation_number": "1", "name": "X AS", "legal_form": "AS", "evidence": {
+        "registry": {"status": "available", "source_url": "u"},
+        "registry_live": {"status": "available", "source_url": "https://data.brreg.no/enhetsregisteret/api/enheter/1", "retrieved_at": "t",
+                          "value": {"activity": ["Drift av restaurant og kafé.", "Catering."]}},
+        "financials": {"status": "blocked", "source_url": "f", "note": "Not requested: the run's outbound request budget (policy)"}},
+        "external_claims": []}
+    brief = company_brief(profile)
+    act = [s for s in brief["sentences"] if s["text"].startswith("Registered activity")]
+    assert act and "Drift av restaurant og kafé. Catering." in act[0]["text"]
+    assert act[0]["source_url"].endswith("/enheter/1")
+    fin = next(u for u in brief["unknowns"] if u["topic"] == "financials")
+    assert "request budget" in fin["note"]

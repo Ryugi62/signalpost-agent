@@ -85,8 +85,46 @@ def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]] | No
     return out
 
 
-def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetches: int = 3, collisions: dict[str, dict[str, int]] | None = None) -> tuple[dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
-    """UC-1. Returns (published website evidence or None, discovery record, metrics)."""
+def _host_of(url: Any) -> str:
+    return re.sub(r"^https?://", "", str(url or "").strip().casefold()).split("/")[0].split(":")[0].removeprefix("www.")
+
+
+def secondary_pages_for(profile: dict[str, Any]):
+    """Homepage-first crawl budget for a discovery candidate (UC-1, AC-19).
+
+    Returns a function of the fetched homepage value: 1 secondary page when the exact org number is already on
+    the homepage (enough for contact e-mail/socials), 2 when the full legal name is there but no proof yet, and 0
+    when neither the name nor the org number appears (plainly not this company's site: stop after one page)."""
+    org = re.sub(r"\D", "", str(profile.get("organisation_number") or ""))
+    tokens = [t for t in name_tokens(profile.get("name")) if t not in {"og"}]
+
+    def decide(value: dict[str, Any]) -> int:
+        text = "\n".join(_page_texts(value))  # page content only: the hostname was generated from the name
+        digits = re.sub(r"\D", "", text)
+        if len(org) == 9 and org in digits:
+            return 1
+        from .domain import _ascii
+        compact = re.sub(r"[^a-z0-9]", "", _ascii(text))
+        if tokens and all(t in compact for t in tokens):
+            return 2
+        return 0
+
+    return decide
+
+
+def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetches: int = 3, max_generated_fetches: int = 1,
+                     collisions: dict[str, dict[str, int]] | None = None,
+                     prior_record: dict[str, Any] | None = None, extra_hosts: Iterable[str] = (), can_spend: Any = None,
+                     homepage_first: bool = True) -> tuple[dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
+    """UC-1. Returns (published website evidence or None, discovery record, metrics).
+
+    prior_record: the registry-declared website record the run already fetched (status available, not publishable by
+    the starter's name gate). It is checked first with the same proof gate and costs no request (AC-17).
+    extra_hosts: further registry- or Wikidata-declared domains (subunit e-mail domains, Wikidata P856); like other
+    declared domains they need the org number unless the domain spells the full legal name (AC-18).
+    can_spend(): optional budget check before each new site fetch.
+    max_generated_fetches: name-generated candidates fetched at most this many times (v1 run on 1,000 companies:
+    36 of 37 discoveries were the first site fetched; later candidates cost ~75% of discovery requests)."""
     name = profile.get("name")
     full_tokens = name_tokens(name)
     locations = (((profile.get("evidence") or {}).get("locations") or {}).get("value") or {}).get("locations") or []
@@ -96,34 +134,58 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
     email_host = email_domain_candidate(raw.get("epostadresse"), (collisions or {}).get("email_domain")) if collisions is not None else None
     if email_host:
         candidates = [email_host] + [c for c in candidates if c != email_host]
-    registry_hosts = []
+    registry_hosts: list[str] = []
     for item in locations[:5]:
-        host = re.sub(r"^https?://", "", str(item.get("website") or "").strip().casefold()).split("/")[0].removeprefix("www.")
+        host = _host_of(item.get("website"))
         if host and "." in host and host not in candidates and host not in registry_hosts:
             registry_hosts.append(host)
-    candidates = registry_hosts[:2] + candidates
+    declared_extra: list[str] = []
+    for host in extra_hosts:
+        host = _host_of(host)
+        if host and "." in host and host not in candidates and host not in registry_hosts and host not in declared_extra:
+            declared_extra.append(host)
+    prior_host = None
+    if prior_record and prior_record.get("status") == "available":
+        prior_host = _host_of((prior_record.get("value") or {}).get("requested_url") or prior_record.get("source_url"))
+    candidates = registry_hosts[:2] + declared_extra[:2] + candidates
+    if prior_host:
+        candidates = [prior_host] + [c for c in candidates if c != prior_host]
+    declared = set(registry_hosts) | set(declared_extra) | ({email_host} if email_host else set()) | ({prior_host} if prior_host else set())
     metrics = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0}
     attempts: list[dict[str, Any]] = []
     proof_profile = {"organisation_number": profile.get("organisation_number"), "name": name, "registry": registry_contact(profile)}
     fetches = 0
+    generated_fetches = 0
+    gate = secondary_pages_for(profile) if homepage_first else None
     for host in candidates:
-        metrics["dns_lookups"] += 1
-        if not _resolves(host):
-            attempts.append({"candidate": host, "result": "no_dns"})
-            continue
-        if fetches >= max_fetches:
-            attempts.append({"candidate": host, "result": "fetch_budget_exhausted"})
-            break
-        fetches += 1
-        record, fetch_metrics = fetch_website(f"https://{host}/", timeout=timeout, max_secondary=2, source_class="discovered_company_website")
-        metrics["requests"] += fetch_metrics["requests"]
-        metrics["bytes"] += fetch_metrics["bytes"]
-        metrics["latencies_ms"] += fetch_metrics["latencies_ms"]
+        if host == prior_host:
+            record = prior_record
+            fetch_note = "registry-declared website already fetched (no new request)"
+        else:
+            metrics["dns_lookups"] += 1
+            if not _resolves(host):
+                attempts.append({"candidate": host, "result": "no_dns"})
+                continue
+            if fetches >= max_fetches or (host not in declared and generated_fetches >= max_generated_fetches):
+                attempts.append({"candidate": host, "result": "fetch_budget_exhausted"})
+                break
+            if can_spend is not None and not can_spend():
+                attempts.append({"candidate": host, "result": "run_request_budget_exhausted"})
+                break
+            fetches += 1
+            generated_fetches += host not in declared
+            record, fetch_metrics = fetch_website(f"https://{host}/", timeout=timeout, max_secondary=2, source_class="discovered_company_website",
+                                                  **({"secondary_gate": gate} if gate is not None else {}))
+            metrics["requests"] += fetch_metrics["requests"]
+            metrics["bytes"] += fetch_metrics["bytes"]
+            metrics["latencies_ms"] += fetch_metrics["latencies_ms"]
+            fetch_note = None
         if record.get("status") != "available":
             attempts.append({"candidate": host, "result": record.get("status"), "note": record.get("note")})
             continue
-        value = record.get("value") or {}
-        from_email = host == email_host or host in registry_hosts  # registry-declared domain (e-mail or subunit website)
+        value = dict(record.get("value") or {})
+        value["pages"] = list(value.get("pages") or [])
+        from_email = host in declared  # registry/Wikidata-declared domain (e-mail, subunit website, entity website)
         host_base = host.split(".")[-2].replace("-", "") if from_email else host.rsplit(".", 1)[0].replace("-", "")
         final_label = str(value.get("registered_domain") or "").split(".")[0].replace("-", "")
         redirected = final_label != host_base
@@ -142,11 +204,14 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
         proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
         # Registry e-mail domains get no name-only shortcut: an address-named holding company can list its
         # owner's e-mail (CARLBERGVEIEN 7 AS -> personalpartner.no, fresh audit 2026-10-04), so org or unique-contact proof is required.
-        if proof["proof"] == "none" and "not all present" not in proof["reason"]:
-            # Name matches but no corroboration yet: read one conventional contact page (bounded, same domain).
+        if (proof["proof"] == "none" and "not all present" not in proof["reason"] and (can_spend is None or can_spend())
+                and len(value["pages"]) <= 1):
+            # Name matches but no corroboration yet and no secondary page was read (the homepage had no contact/about
+            # link): try the two conventional contact paths (bounded, same domain).
             seen = {pg.get("url", "").rstrip("/") for pg in value.get("pages") or []}
             base = (value.get("final_url") or f"https://{host}/").rstrip("/")
-            for path in ("/kontakt", "/kontakt-oss", "/om-oss", "/contact"):
+            base = urllib.parse.urlunparse(urllib.parse.urlparse(base)._replace(path="", params="", query="", fragment="")).rstrip("/")
+            for path in ("/kontakt", "/kontakt-oss"):
                 url = base + path
                 if url in seen:
                     continue
@@ -154,10 +219,15 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
                 metrics["requests"] += req
                 metrics["bytes"] += nbytes
                 if page:
-                    value.setdefault("pages", []).append(page)
+                    value["pages"].append(page)
                     proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
                     break
-        attempts.append({"candidate": host, "final_url": value.get("final_url"), "result": proof["proof"], "reason": proof["reason"]})
+                if can_spend is not None and not can_spend():
+                    break
+        attempt = {"candidate": host, "final_url": value.get("final_url"), "result": proof["proof"], "reason": proof["reason"]}
+        if fetch_note:
+            attempt["note"] = fetch_note
+        attempts.append(attempt)
         qualifiers = {"norway", "norge", "norden", "nordic", "nordics", "scandinavia", "skandinavia", "europe", "international", "group", "holding"}
         label_compact = str(value.get("registered_domain") or host).split(".")[0].replace("-", "")
         missing_qualifier = [t for t in full_tokens if t in qualifiers and t not in label_compact]
@@ -167,20 +237,27 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
                              "reason": f"legal-name qualifier {missing_qualifier} absent from the domain; only an org-number proof is accepted"})
             continue
         if proof["proof"] in {"org", "contact", "registry_email"}:
+            source = ("the registry website field of this entity" if host == prior_host else
+                      f"domain {host} declared in the registry (e-mail or subunit website) or on Wikidata" if from_email else
+                      f"domain candidate {host} generated from the legal name")
             value["identity_assessment"] = {
                 "status": "exact", "score": 1.0 if proof["proof"] == "org" else 0.95, "publishable": True,
                 "legal_name_tokens": full_tokens, "matched_tokens": full_tokens,
                 "proof_snippet": proof.get("snippet"),
-                "reasons": [proof["reason"], (f"domain {host} taken from the registry e-mail address" if from_email else f"domain candidate {host} generated from the legal name") + "; search results not used"],
+                "reasons": [proof["reason"], source + "; search results not used"],
                 "method": f"deterministic_domain_discovery_{proof['proof']}_proof_v1",
             }
-            original = list(value.get("social_links") or [])
+            original = list(value.get("discovered_social_links") or value.get("social_links") or [])
             value["discovered_social_links"] = original
             assessments = [assess_social_identity(profile, link) for link in original]
             value["social_link_assessments"] = assessments
             value["social_links"] = [{"platform": a["platform"], "url": a["url"]} for a in assessments if a["publishable"]]
-            record["value"] = value
-            record["note"] = "Discovered company-owned site; exact identity proven on the site itself (not a search result)"
+            record = {**record, "value": value}
+            if host == prior_host:
+                record["note"] = "Registry-declared company site; exact identity proven on the site itself (org number or registry-unique contact)"
+            else:
+                record["source_class"] = record["source_type"] = "discovered_company_website"
+                record["note"] = "Discovered company-owned site; exact identity proven on the site itself (not a search result)"
             discovery = evidence("website_discovery", "available", "deterministic_domain_discovery", record["source_url"],
                                  value={"candidates": candidates, "attempts": attempts, "published": host})
             return record, discovery, metrics
@@ -221,7 +298,14 @@ def nav_active_entries(days: int, *, cache_dir: Path | None = None, max_pages: i
     latest: dict[str, dict[str, Any]] = {}
     page_hashes = []
     while url and metrics["pages"] < max_pages:
-        body, _ = _get(url, first_headers if metrics["pages"] == 0 else headers)
+        try:
+            body, _ = _get(url, first_headers if metrics["pages"] == 0 else headers)
+        except Exception as exc:
+            metrics["requests"] += 1
+            if not metrics["pages"]:
+                raise
+            metrics["truncated"] = f"{type(exc).__name__}: {str(exc)[:120]}"  # keep the pages already read
+            break
         metrics["requests"] += 1
         metrics["bytes"] += len(body)
         metrics["pages"] += 1
@@ -234,6 +318,8 @@ def nav_active_entries(days: int, *, cache_dir: Path | None = None, max_pages: i
         if not next_url or not page.get("items"):
             break
         url = NAV_FEED + next_url
+    if url and metrics["pages"] >= max_pages:
+        metrics["truncated"] = f"page cap {max_pages} reached"
     active = {k: v for k, v in latest.items() if v.get("status") == "ACTIVE"}
     metrics["feed_sha256"] = hashlib.sha256("".join(page_hashes).encode()).hexdigest()
     metrics["active_entries"] = len(active)

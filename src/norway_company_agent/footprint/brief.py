@@ -55,6 +55,10 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
             unknowns.append({"topic": "employees", "note": "Not reported in the registry (Brønnøysund publishes counts only from 5 employees); missing is not zero."})
         if profile.get("bankrupt") or profile.get("liquidating"):
             add("The registry flags the entity as bankrupt or under liquidation.", registry)
+        activity_lines = live.get("activity") or []
+        if isinstance(activity_lines, list) and any(str(x).strip() for x in activity_lines):
+            text = " ".join(str(x).strip() for x in activity_lines if str(x).strip())[:300]
+            add(f"Registered activity (the company's own statement to the registry, in Norwegian): \"{text}\"", ev.get("registry_live"))
     else:
         unknowns.append({"topic": "registry", "note": "Organisation number not present in the registry snapshot."})
 
@@ -84,6 +88,8 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
                 add(f"Change {prev_year}→{year}: " + "; ".join(changes) + ".", fin)
         if latest.get("revenue") is None:
             unknowns.append({"topic": "revenue", "note": f"No revenue line in the {year} filing; not converted to zero."})
+    elif fin.get("status") == "blocked":
+        unknowns.append({"topic": "financials", "note": "Annual accounts not requested in this run: " + str(fin.get("note") or "request budget")})
     else:
         unknowns.append({"topic": "financials", "note": "No normalised annual account returned by Regnskapsregisteret."})
 

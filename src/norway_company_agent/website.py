@@ -75,9 +75,14 @@ def normalize_homepage(value: str | None) -> str | None:
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", "", ""))
 
 
+# Bundled public-suffix snapshot only: the default extractor downloads the list over the network on first use,
+# which would be an unbudgeted outbound request in a clean container.
+_TLD = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, fallback_to_snapshot=True)
+
+
 def _registered_domain(url: str) -> str:
     parsed = urllib.parse.urlparse(url)
-    ext = tldextract.extract(parsed.hostname or "")
+    ext = _TLD(parsed.hostname or "")
     return ext.top_domain_under_public_suffix
 
 
@@ -336,7 +341,10 @@ def _extraction_state(text: str, soup: BeautifulSoup) -> str:
     return "js_fallback_candidate" if len(text.strip()) < 100 and len(soup.select("script[src]")) >= 2 else "static_complete"
 
 
-def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_000_000, max_secondary: int = 4, source_class: str = "registry_linked_company_website") -> tuple[dict[str, Any], dict[str, Any]]:
+def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_000_000, max_secondary: int = 4, source_class: str = "registry_linked_company_website",
+                  secondary_gate: Any = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """secondary_gate(value) -> int, when given, decides from the homepage alone how many secondary pages to read
+    (capped by max_secondary). It lets discovery stop after one page on a site that is plainly not the company's."""
     supplied_url = str(url or "").strip()
     supplied_scheme = bool(re.match(r"^https?://", supplied_url, re.I))
     normalized = normalize_homepage(url)
@@ -389,7 +397,8 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
         bytes_received = len(raw)
         page_latencies = [elapsed]
         homepage_domain = value["registered_domain"]
-        for page_url in _priority_links(final_url, soup, limit=max_secondary):
+        limit = max_secondary if secondary_gate is None else max(0, min(max_secondary, int(secondary_gate(value))))
+        for page_url in _priority_links(final_url, soup, limit=limit) if limit else []:
             page, page_social, page_requests, page_bytes, page_elapsed, page_error = _fetch_secondary_page(
                 page_url,
                 homepage_domain=homepage_domain,
@@ -416,7 +425,7 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
     except urllib.error.URLError as exc:
         if not supplied_scheme and normalized.startswith("https://"):
             first_elapsed = int((time.monotonic() - started) * 1000)
-            record, metrics = fetch_website("http://" + supplied_url, timeout=timeout, max_bytes=max_bytes, max_secondary=max_secondary, source_class=source_class)
+            record, metrics = fetch_website("http://" + supplied_url, timeout=timeout, max_bytes=max_bytes, max_secondary=max_secondary, source_class=source_class, secondary_gate=secondary_gate)
             metrics["requests"] += 2
             metrics["latencies_ms"].insert(0, first_elapsed)
             return record, metrics
