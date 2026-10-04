@@ -127,3 +127,67 @@ def test_redirect_to_brand_root_with_sole_org_is_accepted(monkeypatch):
     profile = {"organisation_number": "912345678", "name": "TIDES AS", "evidence": {}}
     found, _, _ = fio.discover_website(profile)
     assert found is not None
+
+
+def test_email_domain_candidate():
+    from norway_company_agent.footprint.domain import email_domain_candidate
+    assert email_domain_candidate("post@kiship.no") == "kiship.no"
+    assert email_domain_candidate("ola@gmail.com") is None
+    assert email_domain_candidate("styret@usbl.no", {"usbl.no": 899}) is None
+    assert email_domain_candidate("x@firma.no", {"firma.no": 1}) == "firma.no"
+    assert email_domain_candidate("") is None
+
+
+def test_directory_page_and_shared_phone_rejected():
+    profile = {"organisation_number": "810034882", "name": "SANDNES ELEKTRISKE AS",
+               "registry": {"postcode": "4313", "street": "Kvellandstrand 4", "phone": "51660000"}}
+    directory = "Sandnes Elektriske AS 810 034 882 · Bergen Rør AS 912 345 678"
+    assert identity_proof(profile, [directory])["proof"] == "none"
+    shared = {"phone": {"51660000": 4}, "address": {}}
+    assert identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"], collisions=shared)["proof"] == "none"
+    unique = {"phone": {"51660000": 1}, "address": {}}
+    out = identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"], collisions=unique)
+    assert out["proof"] == "contact" and "51 66 00 00" in out["snippet"]
+
+
+def test_absent_org_still_gets_profile(tmp_path):
+    import gzip
+    from norway_company_agent.batch import profiles_from_bulk
+    bulk = tmp_path / "b.csv"
+    with gzip.open(bulk, "wt", encoding="utf-8") as h:
+        h.write('"organisasjonsnummer";"navn";"organisasjonsform.kode"\n"123456785";"FOO AS";"AS"\n')
+    profiles, meta = profiles_from_bulk(bulk, ["123456785", "987654321"])
+    assert [p["organisation_number"] for p in profiles] == ["123456785", "987654321"]
+    assert profiles[1]["evidence"]["registry"]["status"] == "not_found"
+    assert meta["absent_from_snapshot"] == ["987654321"]
+
+
+def test_subsidiary_qualifier_requires_org_proof(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: True)
+
+    def fake_fetch(url, **kwargs):
+        return ({"status": "available", "source_url": "https://www.enry.com/", "value": {
+            "final_url": "https://www.enry.com/", "registered_domain": "enry.com",
+            "title": "Enry Norway – cleaning", "identity_text_excerpt": "Enry Norway AS, Storgata 1, 0155 Oslo tlf 22 11 22 33",
+            "pages": [], "social_links": []}}, {"requests": 2, "bytes": 10, "latencies_ms": [1]})
+
+    monkeypatch.setattr(fio, "fetch_website", fake_fetch)
+    profile = {"organisation_number": "921183623", "name": "ENRY NORWAY AS",
+               "evidence": {"registry": {"value": {"epostadresse": "post@enry.com"}},
+                            "registry_live": {"value": {"phone": "22112233", "business_address": {"adresse": ["Storgata 1"], "postnummer": "0155"}}}}}
+    found, discovery, _ = fio.discover_website(profile, collisions={"email_domain": {"enry.com": 1}, "phone": {"22112233": 1}, "address": {}})
+    assert found is None
+    assert any(a["result"] == "brand_or_parent_site" for a in discovery["value"]["attempts"])
+
+
+def test_snippet_masks_email():
+    profile = {"organisation_number": "810034882", "name": "X AS"}
+    out = identity_proof(profile, ["kontakt ola.nordmann@firma.no Org.nr 810 034 882"])
+    assert out["proof"] == "org" and "@" not in out["snippet"]
+
+
+def test_other_org_in_odd_grouping_blocks_org_proof():
+    profile = {"organisation_number": "892469172", "name": "FJORDSAILING AS"}
+    assert identity_proof(profile, ["Org.no: 995 91 6193 MVA Org.no. 892 46 9172 MVA"])["proof"] == "none"

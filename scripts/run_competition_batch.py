@@ -16,7 +16,7 @@ from norway_company_agent.identity import apply_website_identity_gate  # noqa: E
 from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
 from norway_company_agent.footprint.domain import flatten_external_claims  # noqa: E402
-from norway_company_agent.footprint.io import discover_website, nav_jobs_for_batch, wikidata_for_batch  # noqa: E402
+from norway_company_agent.footprint.io import discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -24,7 +24,9 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+            # U+2028/U+2029 are valid inside JSON strings but break line-based readers; escape them.
+            line = json.dumps(row, ensure_ascii=False, separators=(",", ":")).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+            handle.write(line + "\n")
     temporary.replace(path)
 
 
@@ -41,6 +43,8 @@ def main() -> None:
     parser.add_argument("--checkpoint-every", type=int, default=25)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website,website_discovery,jobs,wikidata")
+    parser.add_argument("--deadline-minutes", type=float, default=38.0, help="After this, remaining companies skip website crawling/discovery (envelopes still emitted)")
+    parser.add_argument("--max-discovery-requests", type=int, default=1650, help="Hard cap on HTTP requests spent on domain discovery per run")
     parser.add_argument("--nav-days", type=int, default=75, help="NAV vacancy-feed window in days")
     args = parser.parse_args()
 
@@ -59,11 +63,23 @@ def main() -> None:
     fetch_modules = set(requested_modules) - {"registry", "accounting_obligation", "website", "website_discovery", "jobs", "wikidata"}
     operations = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0, "by_module": {}}
 
+    import threading
+    import time as _time
+    run_t0 = _time.monotonic()
+    budget_lock = threading.Lock()
+    discovery_spent = {"requests": 0}
+
+    def over_deadline() -> bool:
+        return (_time.monotonic() - run_t0) / 60.0 > args.deadline_minutes
+
     def enrich(profile: dict) -> tuple[dict, dict]:
         records, metrics = fetch_official_modules(profile["organisation_number"], fetch_modules)
         profile["evidence"].update(records)
         website_metrics = {"requests": 0, "bytes": 0, "latencies_ms": []}
-        if "website" in requested_modules:
+        if "website" in requested_modules and over_deadline():
+            from norway_company_agent.evidence import evidence as _ev
+            profile["evidence"]["website"] = _ev("website", "source_error", "registry_linked_company_website", profile.get("website") or "about:blank", note="skipped: run deadline reached")
+        elif "website" in requested_modules:
             website_record, website_metrics = fetch_website(profile.get("website"))
             profile["evidence"]["website"] = apply_website_identity_gate(profile, website_record)["website"]
         discovery_metrics = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0}
@@ -73,9 +89,15 @@ def main() -> None:
             if published:
                 profile["evidence"]["website_discovery"] = {**site, "field": "website_discovery", "status": "not_applicable", "value": None,
                                                             "note": "Registry-linked website already passed the identity gate"}
+            elif over_deadline() or discovery_spent["requests"] >= args.max_discovery_requests:
+                from norway_company_agent.evidence import evidence as _ev
+                profile["evidence"]["website_discovery"] = _ev("website_discovery", "source_error", "deterministic_domain_discovery", "about:blank",
+                                                               note="skipped: run deadline or discovery request budget reached")
             else:
                 try:
-                    found, discovery, discovery_metrics = discover_website(profile)
+                    found, discovery, discovery_metrics = discover_website(profile, collisions=collisions)
+                    with budget_lock:
+                        discovery_spent["requests"] += discovery_metrics["requests"]
                 except Exception as exc:  # never drop the envelope
                     from norway_company_agent.evidence import evidence as _ev
                     found, discovery = None, _ev("website_discovery", "source_error", "deterministic_domain_discovery", "about:blank", note=f"{type(exc).__name__}: {str(exc)[:160]}")
@@ -94,6 +116,7 @@ def main() -> None:
         profile["run_metrics"] = metric
         return profile, metric
 
+    collisions = registry_collisions(args.bulk) if "website_discovery" in requested_modules else None
     nav_future = None
     nav_pool = None
     if "jobs" in requested_modules:

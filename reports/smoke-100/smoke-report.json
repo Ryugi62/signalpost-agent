@@ -1,7 +1,7 @@
 {
-  "run_id": "smoke-100-v1",
-  "started_at": "2026-10-04T06:55:19.730791Z",
-  "completed_at": "2026-10-04T07:00:16.240022Z",
+  "run_id": "smoke-100-final",
+  "started_at": "2026-10-04T07:48:10.294431Z",
+  "completed_at": "2026-10-04T07:53:04.328475Z",
   "expected_count": 100,
   "emitted_envelopes": 100,
   "resumed_profiles": 0,
@@ -23,19 +23,20 @@
     "registry_snapshot_sha256": "ec76476654c2e21a78d6434b32e30fb139d0360f1694fbc2d4fd75bf88b9eeba",
     "registry_rows_scanned": 1158181,
     "requested": 100,
-    "selected": 100
+    "selected": 100,
+    "absent_from_snapshot": []
   },
   "operations": {
-    "requests": 825,
-    "bytes": 17966528,
-    "dns_lookups": 233,
+    "requests": 829,
+    "bytes": 18648810,
+    "dns_lookups": 239,
     "by_module": {
-      "website_discovery": 132,
+      "website_discovery": 136,
       "wikidata": 1,
       "jobs": 143
     },
-    "p50_ms": 1265,
-    "p95_ms": 1736
+    "p50_ms": 1264,
+    "p95_ms": 1680
   },
   "validation": {
     "passed": true,
@@ -56,10 +57,10 @@
     },
     "jobs": {
       "requests": 143,
-      "bytes": 67910987,
+      "bytes": 67845119,
       "pages": 139,
-      "feed_sha256": "8579c2be062e15d0e131fa58a88aa837bb55a004f47c1dc32a9ddcb31d6d8337",
-      "active_entries": 9461,
+      "feed_sha256": "9c1c362c87a43e482469b4220c955d56d540ac98210faac812b0c41ec32d1f49",
+      "active_entries": 9460,
       "name_candidates": 2,
       "details_fetched": 2,
       "orgs_with_jobs": 2
@@ -67,9 +68,9 @@
   },
   "third_party_cost_usd": 0,
   "external_coverage": {
-    "published_websites": 12,
-    "discovered_websites": 7,
-    "orgs_with_social": 4,
+    "published_websites": 11,
+    "discovered_websites": 6,
+    "orgs_with_social": 3,
     "orgs_with_jobs": 2,
     "orgs_with_wikidata": 0
   }

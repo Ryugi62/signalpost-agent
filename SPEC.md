@@ -17,8 +17,9 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - **organisation number (org)**: the 9-digit Brønnøysund key, used as the identity anchor.
 - **subunit**: an official underenhet (workplace) of an org.
 - **domain candidate**: a `.no` hostname generated deterministically from the legal name. It is not evidence.
-- **org proof**: the exact 9-digit org (with or without spaces/dots) appears on a fetched page of the candidate site.
-- **contact proof**: every legal-name token appears **and** the registry postcode + street, or the registry phone, appears on a fetched page.
+- **org proof**: the exact 9-digit org (with or without spaces/dots) appears on a fetched page of the candidate site, and that page shows no other org number (this excludes directories and group lists).
+- **contact proof**: every legal-name token appears, **and** the registry phone or the registry street+postcode appears, **and** that phone or address is held by exactly one entity in the bulk registry. It is refused when the site lists other org numbers, or when a legal-name qualifier such as Norway/Group/Holding is absent from the domain.
+- **registry e-mail domain**: the domain of the registry `epostadresse`. Free-mail is excluded, and so is any domain shared by more than 3 entities. It has the same standing as a registry website.
 - **discovered website**: a candidate that passed org proof or contact proof. Only a discovered website is published.
 - **job claim**: an active NAV (arbeidsplassen) vacancy whose `employer.orgnr` equals the org or one of its subunits.
 - **wikidata bridge**: a Wikidata item whose P2333 equals the org. It yields its website (P856) and social IDs.
@@ -38,7 +39,9 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - AC-3 Given all name tokens plus the registry postcode and street on the page, then the proof is `contact`. Given the name tokens only, the proof is `none` (ambiguous, not published).
 - AC-4 Given a NAV detail whose employer.orgnr is a subunit of org X, then the job is attributed to X. Given an unrelated orgnr, it is rejected.
 - AC-5 Given a SPARQL binding with P2333 = X, then the claims carry the website and social URLs with the source `https://www.wikidata.org/wiki/Q…`.
-- AC-6 Every input org yields exactly one envelope, even when the discovery, NAV or Wikidata modules fail (state `source_error`, never dropped).
+- AC-6 Every input org yields exactly one envelope, even when the discovery, NAV or Wikidata modules fail (state `source_error`, never dropped), and even when the org is absent from the bulk snapshot.
+- AC-7 A redirect to a different domain is published only when it lands on a root-level page with an org proof (directory deep links are rejected).
+- AC-8 A phone shared by 2 or more registry entities never proves identity.
 
 ## 7. Layers
 `src/norway_company_agent/footprint/` holds pure functions (candidates, proof, matching, parsing), which are domain logic with no I/O. The I/O adapters (DNS/HTTP/NAV/Wikidata) sit in the same package's `*_io.py`. The runner script is the infrastructure.

@@ -86,13 +86,29 @@ def profiles_from_bulk(path: str | Path, organisation_numbers: Iterable[str]) ->
         if len(found) == len(wanted):
             break
     missing = [org for org in requested if org not in found]
-    if missing:
-        raise ValueError(f"Organisation numbers absent from registry snapshot: {missing[:10]}")
+    for org in missing:
+        # Deleted or renumbered since the snapshot: still return a terminal envelope (never crash the batch).
+        found[org] = {
+            "organisation_number": org, "name": None, "legal_form": None, "employees": None, "bankrupt": None,
+            "liquidating": None, "municipality": None, "municipality_number": None, "industry_code": None,
+            "industry_label": None, "website": None, "latest_submitted_accounts": None,
+            "evidence": {
+                "registry": evidence(
+                    "registry", "not_found", "official_registry_bulk",
+                    "https://data.brreg.no/enhetsregisteret/api/enheter/lastned/csv",
+                    retrieved_at=retrieved_at, content_sha256=snapshot_sha256, source_row_key=org,
+                    note="Organisation number absent from the bulk snapshot (deleted, merged or not yet published)",
+                ),
+                "accounting_obligation": evidence("accounting_obligation", "not_applicable", "official_rule_interpretation",
+                                                  "https://www.brreg.no/", note="No registry row to classify"),
+            },
+        }
     return [found[org] for org in requested], {
         "registry_snapshot_sha256": snapshot_sha256,
         "registry_rows_scanned": scanned,
         "requested": len(requested),
-        "selected": len(found),
+        "selected": len(found) - len(missing),
+        "absent_from_snapshot": missing,
     }
 
 

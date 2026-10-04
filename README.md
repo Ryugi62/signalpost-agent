@@ -4,11 +4,13 @@ Entry for the Builderr **Signalpost** challenge. It is built on the official Bui
 
 | Module | Field family | Identity rule | Source / licence |
 |---|---|---|---|
-| `website_discovery` | official website and the company-owned social profiles it links to | The domain is generated deterministically from the legal name. It is published only when a fetched page of that site shows the **exact 9-digit organisation number**, or the full legal name **plus** the registry phone or registry street and postcode. No search engine is used. | the company's own site (robots.txt respected) |
-| `jobs` | hiring: active vacancies | The NAV ad's `employer.orgnr` equals the organisation or one of its registered subunits | NAV public vacancy feed `pam-stilling-feed.nav.no` (public token fetched at run time) |
-| `wikidata` | website and social IDs | Wikidata P2333 (Norwegian organisation number) equals the organisation | Wikidata SPARQL, CC0 |
+| `website_discovery` | official website, plus the company-owned social profiles it links to | Candidates: the domain of the company's **registry e-mail address** (free-mail and domains shared by more than 3 registry entities are excluded), then `.no` hostnames generated from the legal name, subunit names and å/ø spellings. Publication requires one of three proofs. **Org proof:** the exact 9-digit organisation number on a fetched page of that site, where that page shows no other org number. **Contact proof:** the full legal name plus a registry phone or registry street+postcode that **only this entity holds in the whole registry**. **Registry e-mail domain:** the starter's registry-website name gate. Redirects to other domains are accepted only onto a root-level page with an org proof. Contact proofs are refused when a legal-name qualifier such as "Norway" or "Group" is missing from the domain, because that is likely a parent or brand site. Everything else stays `ambiguous` and is never published. No search engine is used. | the company's own site (robots.txt respected) |
+| `jobs` | hiring: active vacancies | The NAV ad's `employer.orgnr` equals the organisation or one of its registered subunits. Expired ads are dropped. | NAV public vacancy feed `pam-stilling-feed.nav.no` (public token fetched at run time) |
+| `wikidata` | website and social IDs | Wikidata P2333 (Norwegian organisation number) equals the organisation, and exactly one item carries it | Wikidata SPARQL, CC0 |
 
-The starter's website identity gate also reads footer and contact text now, so a registry-listed site that prints its org number in the footer is no longer withheld.
+The starter's website identity gate now also reads footer and contact text, so a registry-listed site that prints its org number in the footer is no longer withheld. Organisation numbers missing from the bulk snapshot (deleted since) still get a terminal envelope instead of crashing the batch.
+
+**Identity audit.** On two fresh 1,000-company batches that were not used for tuning, every discovered site was checked against its stored proof snippet (`reports/identity-audit.md`). Each published claim carries `proof_snippet`, `identity_reason`, `source_url`, `retrieved_at` and `content_sha256`.
 
 ## One command (official run)
 
@@ -23,7 +25,7 @@ uv sync --frozen && uv run python scripts/run_competition_batch.py \
 
 - Models and APIs: **no LLM and no paid API.** Brønnøysund open data (NLOD 2.0), NAV public vacancy feed, Wikidata (CC0) and company-owned websites.
 - Secrets: none. Third-party cost per official run: **$0**.
-- Budget: the NAV feed is read once per batch (~150 pages for 75 days), in parallel with the per-company work. Wikidata is one SPARQL request per 400 companies. Domain discovery runs DNS first and fetches at most 2 candidate sites (≤3 pages each) only for companies without a verified registry website. Request counts per module are written to the run report.
+- Budget: the NAV feed is read once per batch (~140 pages for 75 days), in parallel with the per-company work. Wikidata is one SPARQL request per 400 companies. Domain discovery runs DNS first and fetches at most 3 candidate sites (≤3 pages each), and only for companies without a verified registry website. It is hard-capped by `--max-discovery-requests` (default 1,650). After `--deadline-minutes` (default 38), the remaining companies skip crawling but still return envelopes. Per-module request counts go into the run report. The registry modules are the starter's unchanged per-company calls. A local 1,000-company run takes about 8 minutes.
 - Smoke test: `reports/smoke-100/` (100 random companies from the public universe).
 
 ---

@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..evidence import evidence, utc_now
-from ..identity import _sole_org_number, assess_social_identity
+from ..identity import _sole_org_number, assess_social_identity, assess_website_identity
 from ..website import _fetch_secondary_page, fetch_website
-from .domain import domain_candidates, identity_proof, name_key, name_tokens, parse_wikidata_bindings
+from .domain import domain_candidates, email_domain_candidate, identity_proof, name_key, name_tokens, parse_wikidata_bindings
 
 USER_AGENT = "signalpost-exact-id-agent/1.0 (+https://github.com/; contact via submit@builderr.ai entry)"
 NAV_FEED = "https://pam-stilling-feed.nav.no"
@@ -49,13 +49,41 @@ def _page_texts(value: dict[str, Any]) -> list[str]:
     return [str(t or "") for t in texts]
 
 
-def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetches: int = 3) -> tuple[dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
+def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]]:
+    """One pass over the bulk snapshot: how many entities share each e-mail domain, phone and street+postcode."""
+    import csv
+    import gzip
+
+    from .domain import _phone_digits, address_key
+
+    out: dict[str, dict[str, int]] = {"email_domain": {}, "phone": {}, "address": {}}
+    with gzip.open(bulk_path, "rt", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            email = (row.get("epostadresse") or "").strip().casefold()
+            if "@" in email:
+                domain = email.rsplit("@", 1)[1]
+                out["email_domain"][domain] = out["email_domain"].get(domain, 0) + 1
+            for field in ("telefon", "mobil"):
+                phone = _phone_digits(row.get(field))
+                if phone:
+                    out["phone"][phone] = out["phone"].get(phone, 0) + 1
+            key = address_key(row.get("forretningsadresse.adresse"), row.get("forretningsadresse.postnummer"))
+            if key:
+                out["address"][key] = out["address"].get(key, 0) + 1
+    return out
+
+
+def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetches: int = 3, collisions: dict[str, dict[str, int]] | None = None) -> tuple[dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
     """UC-1. Returns (published website evidence or None, discovery record, metrics)."""
     name = profile.get("name")
     full_tokens = name_tokens(name)
     locations = (((profile.get("evidence") or {}).get("locations") or {}).get("value") or {}).get("locations") or []
     brands = list(dict.fromkeys(item.get("name") for item in locations if item.get("name")))[:2]
     candidates = domain_candidates(name, limit=6, brand_names=brands)
+    raw = ((profile.get("evidence") or {}).get("registry") or {}).get("value") or {}
+    email_host = email_domain_candidate(raw.get("epostadresse"), (collisions or {}).get("email_domain")) if collisions is not None else None
+    if email_host:
+        candidates = [email_host] + [c for c in candidates if c != email_host]
     metrics = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0}
     attempts: list[dict[str, Any]] = []
     proof_profile = {"organisation_number": profile.get("organisation_number"), "name": name, "registry": registry_contact(profile)}
@@ -77,7 +105,8 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
             attempts.append({"candidate": host, "result": record.get("status"), "note": record.get("note")})
             continue
         value = record.get("value") or {}
-        host_base = host.rsplit(".", 1)[0].replace("-", "")
+        from_email = host == email_host
+        host_base = host.split(".")[-2].replace("-", "") if from_email else host.rsplit(".", 1)[0].replace("-", "")
         final_label = str(value.get("registered_domain") or "").split(".")[0].replace("-", "")
         redirected = final_label != host_base
         if redirected:
@@ -89,8 +118,15 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
             if path_depth > 1 or strict["proof"] != "org" or not _sole_org_number(str(profile.get("organisation_number")), "\n".join(texts)):
                 attempts.append({"candidate": host, "final_url": value.get("final_url"), "result": "redirected_off_candidate"})
                 continue
-        full_name_host = host_base == "".join(t for t in full_tokens if t != "og")
-        proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host)
+        full_name_host = from_email or host_base == "".join(t for t in full_tokens if t != "og")
+        proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
+        if from_email and proof["proof"] == "none":
+            # Registry-declared e-mail domain: same standing as a registry-listed website, so the starter's
+            # registry-website name gate applies (all legal-name tokens in homepage identity, parked pages rejected).
+            gate = assess_website_identity({"organisation_number": profile.get("organisation_number"), "name": name,
+                                            "evidence": {"website": {"value": value, "source_url": record.get("source_url")}}})
+            if gate.get("publishable"):
+                proof = {"proof": "registry_email", "reason": "domain of the registry-declared company e-mail; " + "; ".join(gate.get("reasons") or [])}
         if proof["proof"] == "none" and "not all present" not in proof["reason"]:
             # Name matches but no corroboration yet: read one conventional contact page (bounded, same domain).
             seen = {pg.get("url", "").rstrip("/") for pg in value.get("pages") or []}
@@ -104,14 +140,23 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
                 metrics["bytes"] += nbytes
                 if page:
                     value.setdefault("pages", []).append(page)
-                    proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host)
+                    proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
                     break
         attempts.append({"candidate": host, "final_url": value.get("final_url"), "result": proof["proof"], "reason": proof["reason"]})
-        if proof["proof"] in {"org", "contact"}:
+        qualifiers = {"norway", "norge", "norden", "nordic", "nordics", "scandinavia", "skandinavia", "europe", "international", "group", "holding"}
+        label_compact = str(value.get("registered_domain") or host).split(".")[0].replace("-", "")
+        missing_qualifier = [t for t in full_tokens if t in qualifiers and t not in label_compact]
+        if proof["proof"] in {"contact", "registry_email"} and missing_qualifier:
+            # e.g. "ENRY NORWAY AS" on enry.com: likely the international brand/parent site, not this exact entity.
+            attempts.append({"candidate": host, "final_url": value.get("final_url"), "result": "brand_or_parent_site",
+                             "reason": f"legal-name qualifier {missing_qualifier} absent from the domain; only an org-number proof is accepted"})
+            continue
+        if proof["proof"] in {"org", "contact", "registry_email"}:
             value["identity_assessment"] = {
                 "status": "exact", "score": 1.0 if proof["proof"] == "org" else 0.95, "publishable": True,
                 "legal_name_tokens": full_tokens, "matched_tokens": full_tokens,
-                "reasons": [proof["reason"], f"domain candidate {host} generated from the legal name; search results not used"],
+                "proof_snippet": proof.get("snippet"),
+                "reasons": [proof["reason"], (f"domain {host} taken from the registry e-mail address" if from_email else f"domain candidate {host} generated from the legal name") + "; search results not used"],
                 "method": f"deterministic_domain_discovery_{proof['proof']}_proof_v1",
             }
             original = list(value.get("social_links") or [])
@@ -221,6 +266,9 @@ def nav_jobs_for_batch(orgs: dict[str, dict[str, Any]], *, days: int = 60, max_d
             metrics["requests"] += 1
             continue
         if content:
+            expires = str(content.get("expires") or "")
+            if expires and expires[:10] < utc_now()[:10]:
+                continue  # expired ad: not a current hiring signal
             content["_sha256"] = digest
             details.append(content)
     matched = match_jobs_to_orgs(details, orgs)
