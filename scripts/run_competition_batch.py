@@ -225,6 +225,7 @@ def main() -> None:
             "discovered_websites": sum(1 for p in ordered_profiles if (p["evidence"].get("website") or {}).get("source_class") == "discovered_company_website" and (p["evidence"]["website"].get("status") == "available")),
             "orgs_with_social": sum(1 for p in ordered_profiles if any(c["field"] in {"facebook", "instagram", "linkedin", "youtube", "x", "tiktok"} and c["availability"] == "available" for c in p["external_claims"])),
             "orgs_with_jobs": sum(1 for p in ordered_profiles if (p["evidence"].get("jobs") or {}).get("status") == "available"),
+            "orgs_with_dated_activity": sum(1 for p in ordered_profiles if any(c["field"] == "dated_activity" and c["availability"] == "available" for c in p["external_claims"])),
             "orgs_with_wikidata": sum(1 for p in ordered_profiles if (p["evidence"].get("wikidata") or {}).get("status") == "available"),
         },
     }

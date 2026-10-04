@@ -249,3 +249,18 @@ def test_email_domain_needs_org_or_unique_contact(monkeypatch):
     found, _, _ = fio.discover_website(profile, collisions={"email_domain": {"personalpartner.no": 1}, "phone": {},
                                                              "address": {address_key("Carlbergveien 7", "1526"): 2}})
     assert found is None
+
+
+def test_dated_activity_extraction_and_claims():
+    from bs4 import BeautifulSoup
+    from norway_company_agent.website import _dated_activity
+    html = '<article><h2><a href="/nyheter/a">Ny avtale med kommunen</a></h2><time datetime="2026-09-12">12. sep</time></article>'
+    meta = {"json-ld": [{"@type": "NewsArticle", "headline": "Åpner ny avdeling", "datePublished": "2026-08-01T10:00:00+02:00", "url": "/n/b"}]}
+    items = _dated_activity("https://foo.no/", BeautifulSoup(html, "lxml"), meta)
+    assert [i["date"] for i in items] == ["2026-09-12", "2026-08-01"]
+    assert items[0]["url"] == "https://foo.no/nyheter/a"
+    site = {"status": "available", "source_url": "https://foo.no/", "retrieved_at": "t", "value": {"final_url": "https://foo.no/",
+            "identity_assessment": {"publishable": True, "reasons": ["x"]}, "social_links": [], "dated_activity": items, "pages": []}}
+    claims = flatten_external_claims({"evidence": {"website": site}})
+    acts = [c for c in claims if c["field"] == "dated_activity"]
+    assert len(acts) == 2 and acts[0]["effective_at"] == "2026-09-12" and acts[0]["availability"] == "available"

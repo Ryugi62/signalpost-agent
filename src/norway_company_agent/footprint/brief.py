@@ -108,6 +108,10 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
         missing = next((c for c in claims if c.get("field") == "official_website"), {})
         unknowns.append({"topic": "website", "note": f"No website could be tied to this exact entity ({missing.get('availability', 'not_available')}); checked: " + "; ".join(missing.get("checked") or ["registry website field"])})
 
+    activity = [c for c in claims if c.get("field") == "dated_activity" and c.get("availability") == "available"]
+    if activity:
+        latest = activity[0]
+        add(f"Dated activity on the company's own site: {len(activity)} item(s); latest {latest['value'].get('date')} — '{latest['value'].get('title')}'.", None, latest.get("source_url"))
     jobs = [c for c in claims if c.get("field") == "job_postings" and c.get("availability") == "available"]
     if jobs:
         titles = "; ".join(str((c.get("value") or {}).get("title")) for c in jobs[:3])

@@ -268,6 +268,20 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             "proof_snippet": assessment.get("proof_snippet"),
             "date_basis": "retrieved_at (live company page; no publication date)",
         })
+        activity: dict[tuple[str, str], dict[str, Any]] = {}
+        for source in [value, *(value.get("pages") or [])]:
+            for item in source.get("dated_activity") or []:
+                activity.setdefault((item.get("date"), str(item.get("title")).casefold()), {**item, "page": source.get("url") or value.get("final_url")})
+        for item in sorted(activity.values(), key=lambda x: x.get("date") or "", reverse=True)[:10]:
+            claims.append({
+                "field": "dated_activity", "value": {"title": item.get("title"), "date": item.get("date"), "type": item.get("type"), "url": item.get("url")},
+                "availability": "available", "source_url": item.get("page"), "source_class": "verified_company_site_dated_item",
+                "retrieved_at": site.get("retrieved_at"), "effective_at": item.get("date"), "method": f"company_site_{item.get('method')}",
+                "date_basis": "publication/start date stated on the company page",
+            })
+        if not activity:
+            claims.append({"field": "dated_activity", "value": None, "availability": "not_available", "source_url": value.get("final_url"),
+                           "retrieved_at": site.get("retrieved_at"), "note": "No dated article/event markup on the fetched pages of the verified site"})
         for link in value.get("social_links") or []:
             claims.append({
                 "field": link.get("platform"), "value": link.get("url"), "availability": "available",

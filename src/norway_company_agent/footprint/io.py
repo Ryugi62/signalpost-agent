@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 import socket
 import time
@@ -95,6 +96,12 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
     email_host = email_domain_candidate(raw.get("epostadresse"), (collisions or {}).get("email_domain")) if collisions is not None else None
     if email_host:
         candidates = [email_host] + [c for c in candidates if c != email_host]
+    registry_hosts = []
+    for item in locations[:5]:
+        host = re.sub(r"^https?://", "", str(item.get("website") or "").strip().casefold()).split("/")[0].removeprefix("www.")
+        if host and "." in host and host not in candidates and host not in registry_hosts:
+            registry_hosts.append(host)
+    candidates = registry_hosts[:2] + candidates
     metrics = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0}
     attempts: list[dict[str, Any]] = []
     proof_profile = {"organisation_number": profile.get("organisation_number"), "name": name, "registry": registry_contact(profile)}
@@ -116,7 +123,7 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
             attempts.append({"candidate": host, "result": record.get("status"), "note": record.get("note")})
             continue
         value = record.get("value") or {}
-        from_email = host == email_host
+        from_email = host == email_host or host in registry_hosts  # registry-declared domain (e-mail or subunit website)
         host_base = host.split(".")[-2].replace("-", "") if from_email else host.rsplit(".", 1)[0].replace("-", "")
         final_label = str(value.get("registered_domain") or "").split(".")[0].replace("-", "")
         redirected = final_label != host_base

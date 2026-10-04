@@ -236,6 +236,7 @@ def _fetch_secondary_page(url: str, *, homepage_domain: str, timeout: float, max
             "title": page_soup.title.get_text(" ", strip=True)[:500] if page_soup.title else "",
             "main_text_excerpt": page_text[:5000],
             "identity_text_excerpt": _identity_text(page_soup),
+            "dated_activity": _dated_activity(final_url, page_soup, _safe_jsonld(page_html, final_url)),
             "content_sha256": __import__("hashlib").sha256(raw).hexdigest(),
         }
         return page, _social_links(final_url, page_soup), 1, len(raw), elapsed, None
@@ -260,6 +261,56 @@ def _jsonld_organisations(metadata: dict[str, Any]) -> list[dict[str, Any]]:
 
     walk(metadata.get("json-ld", []))
     return values[:20]
+
+
+ACTIVITY_TYPES = {"NewsArticle", "Article", "BlogPosting", "Event", "PressRelease", "Report"}
+DATE_RE = re.compile(r"^(20\d{2})-(\d{2})-(\d{2})")
+
+
+def _safe_jsonld(html: str, url: str) -> dict[str, Any]:
+    try:
+        return extruct.extract(html, base_url=url, syntaxes=["json-ld"])
+    except Exception:
+        return {}
+
+
+def _dated_activity(base_url: str, soup: BeautifulSoup, metadata: dict[str, Any] | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    """Dated items published on the company's own pages (JSON-LD articles/events, <article> with <time datetime>). No extra requests."""
+    items: list[dict[str, Any]] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            kind = value.get("@type")
+            kinds = set(kind if isinstance(kind, list) else [kind])
+            if kinds & ACTIVITY_TYPES:
+                date = str(value.get("datePublished") or value.get("startDate") or value.get("dateCreated") or "")
+                title = value.get("headline") or value.get("name")
+                if DATE_RE.match(date) and isinstance(title, str) and title.strip():
+                    url = value.get("url") or value.get("mainEntityOfPage")
+                    url = url.get("@id") if isinstance(url, dict) else url
+                    items.append({"title": title.strip()[:200], "date": date[:10], "type": sorted(k for k in kinds if k)[0],
+                                  "url": urllib.parse.urljoin(base_url, url) if isinstance(url, str) else base_url, "method": "json-ld"})
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk((metadata or {}).get("json-ld", []))
+    for article in soup.select("article")[:30]:
+        time_tag = article.find("time")
+        heading = article.find(["h1", "h2", "h3", "h4"])
+        stamp = str((time_tag.get("datetime") if time_tag else "") or "")
+        if time_tag and heading and DATE_RE.match(stamp):
+            link = heading.find("a") or article.find("a")
+            href = str(link.get("href") or "") if link else ""
+            items.append({"title": heading.get_text(" ", strip=True)[:200], "date": stamp[:10], "type": "article",
+                          "url": urllib.parse.urljoin(base_url, href) if href else base_url, "method": "article-time"})
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in items:
+        if "2000-01-01" <= item["date"] <= "2099-12-31":
+            unique.setdefault((item["date"], item["title"].casefold()), item)
+    return sorted(unique.values(), key=lambda x: x["date"], reverse=True)[:limit]
 
 
 IDENTITY_LINE = re.compile(r"(org\.?\s*n|organisasjonsn|foretaksreg|mva|tlf|telefon|phone|adresse|address|\b\d{4}\s+[A-ZÆØÅ][a-zæøå]+)", re.I)
@@ -321,6 +372,7 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
             "description": description[:2000],
             "main_text_excerpt": text[:5000],
             "identity_text_excerpt": _identity_text(soup),
+            "dated_activity": _dated_activity(final_url, soup, structured),
             "social_links": _social_links(final_url, soup),
             "structured_organisations": _jsonld_organisations(structured),
             "content_sha256": __import__("hashlib").sha256(raw).hexdigest(),
