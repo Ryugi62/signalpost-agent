@@ -43,6 +43,17 @@ def budget_blocked(field: str, source_type: str, url: str) -> dict:
     return _ev(field, "blocked", source_type, url, note=BUDGET_NOTE)
 
 
+def guarded(module: str, source_type: str, orgs: list, call):
+    """A batch-level module failure (network, budget, parsing) becomes per-company failed evidence, never a crashed run (AC-6)."""
+    try:
+        return call()
+    except Exception as exc:
+        from norway_company_agent.evidence import evidence as _ev
+        note = f"{module} failed for the whole batch: {type(exc).__name__}: {str(exc)[:160]}"
+        status = "blocked" if "budget" in str(exc).casefold() else "source_error"
+        return {org: _ev(module, status, source_type, "about:blank", note=note) for org in orgs}, {"error": note}
+
+
 def write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -130,14 +141,14 @@ def main() -> None:
     collisions = registry_collisions(args.bulk) if "website_discovery" in requested_modules else None
     if "registry_live" in requested_modules:
         with charging("registry_batch"):
-            live, live_metrics = fetch_live_entities(orgs)
+            live, live_metrics = guarded("registry_live", "official_registry_live", orgs, lambda: fetch_live_entities(orgs))
         for org, record in live.items():
             by_org[org]["evidence"]["registry_live"] = record
         batch_reports["registry_live"] = live_metrics
     wikidata = {}
     if "wikidata" in requested_modules:
         with charging("wikidata"):
-            wikidata, wikidata_metrics = wikidata_for_batch(orgs)
+            wikidata, wikidata_metrics = guarded("wikidata", "wikidata_sparql", orgs, lambda: wikidata_for_batch(orgs))
         for org in orgs:
             by_org[org]["evidence"]["wikidata"] = wikidata[org]
         batch_reports["wikidata"] = wikidata_metrics
@@ -193,7 +204,7 @@ def main() -> None:
 
     # Workplaces are needed before discovery (subunit websites, e-mail domains and names are candidates).
     if subunit_future is not None:
-        locations, subunit_metrics = subunit_future.result()
+        locations, subunit_metrics = guarded("locations", "official_subunits", orgs, subunit_future.result)
         for org, record in locations.items():
             by_org[org]["evidence"]["locations"] = record
         batch_reports["locations"] = subunit_metrics
@@ -297,7 +308,7 @@ def main() -> None:
         return {"latencies_ms": latencies}
 
     if nav_future is None or nav_future.done():
-        budget.release("jobs")  # the feed walk is over (or failed early): its unused reservation goes back to the pool
+        budget.shrink_reservation("jobs", 12)  # walk over: keep only the token + up-to-10 detail reads, return the rest
     budget.release("financials")
     budget.release("group")
     budget.set_ceiling("financials", None)  # retries may also use whatever discovery left unspent
@@ -305,12 +316,12 @@ def main() -> None:
         for metric in pool.map(per_company_registry, profiles):
             operations["latencies_ms"].extend(metric["latencies_ms"])
     if nav_future is not None and nav_future.done():
-        budget.release("jobs")
+        budget.shrink_reservation("jobs", 12)
     run_discovery(low_yield)  # whatever the registry reads left
     low_pass_end = budget.snapshot()
 
     if roles_future is not None:
-        roles, roles_metrics = roles_future.result()
+        roles, roles_metrics = guarded("roles", "official_roles", orgs, roles_future.result)
         for org, record in roles.items():
             by_org[org]["evidence"]["roles"] = record
         batch_reports["roles"] = roles_metrics
@@ -327,7 +338,8 @@ def main() -> None:
                 "subunit_names": [item.get("name") for item in locations if item.get("name")],
             }
         with charging("jobs"):
-            jobs, jobs_metrics = nav_jobs_for_batch(job_orgs, days=args.nav_days, prefetched=nav_future, max_details=10)
+            jobs, jobs_metrics = guarded("jobs", "nav_public_vacancy_feed", list(job_orgs),
+                                         lambda: nav_jobs_for_batch(job_orgs, days=args.nav_days, prefetched=nav_future, max_details=10))
         for profile in ordered_profiles:
             profile["evidence"]["jobs"] = jobs[profile["organisation_number"]]
         batch_reports["jobs"] = jobs_metrics

@@ -418,8 +418,21 @@ def nav_jobs_for_batch(orgs: dict[str, dict[str, Any]], *, days: int = 60, max_d
             if key and len(key) >= 3:
                 keys.setdefault(key, set()).add(org)
     candidates = [uuid for uuid, entry in active.items() if name_key(entry.get("businessName")) in keys]
-    token = nav_public_token()
-    metrics["requests"] += 1
+    token = None
+    if candidates:
+        try:
+            token = nav_public_token()
+        except Exception as exc:
+            metrics["detail_error"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+        metrics["requests"] += 1
+    if candidates and token is None:
+        # The feed was read, but the ads whose employer name matches could not be opened to check the org number.
+        unchecked = {org for uuid in candidates for org in keys.get(name_key(active[uuid].get("businessName")), set())}
+        note = f"Name-matching NAV ads found but not opened ({metrics['detail_error']}); hiring not determined"
+        status = "blocked" if "budget" in metrics["detail_error"].casefold() else "source_error"
+        candidates = []
+    else:
+        unchecked = set()
     details = []
     for uuid in candidates[:max_details]:
         try:
@@ -438,6 +451,9 @@ def nav_jobs_for_batch(orgs: dict[str, dict[str, Any]], *, days: int = 60, max_d
     metrics.update({"name_candidates": len(candidates), "details_fetched": len(details), "orgs_with_jobs": len(matched)})
     out: dict[str, dict[str, Any]] = {}
     for org in orgs:
+        if org in unchecked:
+            out[org] = evidence("jobs", status, "nav_public_vacancy_feed", f"{NAV_FEED}/api/v1/feed", note=note, retrieved_at=retrieved_at)
+            continue
         items = []
         for content in matched.get(org, []):
             loc = (content.get("workLocations") or [{}])[0]

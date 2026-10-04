@@ -77,6 +77,12 @@ class RequestBudget:
             self._reserved[category] = self._reserved.get(category, 0) + take
             return take
 
+    def shrink_reservation(self, category: str, keep: int) -> None:
+        """Keep at most `keep` requests reserved for `category`; the rest returns to the shared pool."""
+        with self._lock:
+            if category in self._reserved:
+                self._reserved[category] = min(self._reserved[category], max(0, int(keep)))
+
     def release(self, category: str) -> None:
         with self._lock:
             self._reserved.pop(category, None)

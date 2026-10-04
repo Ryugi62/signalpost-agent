@@ -190,3 +190,37 @@ def test_nav_page_timeout_is_retried_but_budget_refusal_is_not(monkeypatch):
     with pytest.raises(OSError):
         fio._get_retrying("https://nav/feed", {})
     assert len(calls) == 1
+
+
+def test_batch_module_failure_never_crashes_the_run():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("runner_guard", Path(__file__).resolve().parents[1] / "scripts" / "run_competition_batch.py")
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+
+    def boom():
+        raise OSError("run request budget exhausted (1950); jobs request to pam-stilling-feed.nav.no not sent")
+
+    records, metrics = runner.guarded("jobs", "nav_public_vacancy_feed", ["1", "2"], boom)
+    assert set(records) == {"1", "2"} and records["1"]["status"] == "blocked" and "error" in metrics
+
+
+def test_nav_token_refusal_marks_only_name_matched_companies(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    def refused():
+        raise OSError("run request budget exhausted (1950)")
+
+    monkeypatch.setattr(fio, "nav_public_token", refused)
+    active = {"u1": {"businessName": "FOO AS", "status": "ACTIVE"}}
+    out, metrics = fio.nav_jobs_for_batch({"1": {"name": "FOO AS"}, "2": {"name": "BAR AS"}}, prefetched=(active, {"requests": 5}))
+    assert out["1"]["status"] == "blocked" and out["2"]["status"] == "not_found"
+
+
+def test_shrink_reservation_returns_the_rest():
+    from norway_company_agent.budget import RequestBudget
+    budget = RequestBudget(100)
+    budget.reserve("jobs", 50)
+    assert budget.available("x") == 50
+    budget.shrink_reservation("jobs", 12)
+    assert budget.available("x") == 88 and budget.available("jobs") == 100
