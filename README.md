@@ -33,7 +33,7 @@ uv sync --frozen && uv run python scripts/run_competition_batch.py \
 - Secrets: none. Third-party cost per official run: **$0**.
 - Budget: the NAV feed is read once per batch (~140 pages for 75 days), in parallel with the per-company work. Wikidata is one SPARQL request per 400 companies. Domain discovery runs DNS first and fetches at most 3 candidate sites (≤3 pages each), and only for companies without a verified registry website. It is hard-capped by `--max-discovery-requests` (default 1,650). After `--deadline-minutes` (default 38), the remaining companies skip crawling but still return envelopes. Per-module request counts go into the run report. The registry modules are the starter's unchanged per-company calls. A local 1,000-company run takes about 8 minutes.
 - Smoke test: `reports/smoke-100/` (100 random companies from the public universe, plus a viewer build). A full fresh 1,000-company run in a clean Linux container: `reports/local-1000-run-report.json`.
-- Robustness: organisation numbers missing from the bulk snapshot still get envelopes. The unchanged starter raised an exception on 2 of 3 fresh random 1,000-company batches for this reason.
+- Robustness: organisation numbers missing from the bulk snapshot still get envelopes. The unchanged starter raised an exception for this reason on 3 of the 5 random 1,000-company batches tested locally.
 
 ---
 
