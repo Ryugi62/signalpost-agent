@@ -78,7 +78,7 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
             for label, key in (("revenue", "revenue"), ("annual result", "annual_result"), ("equity", "equity")):
                 a, b = prev.get(key), latest.get(key)
                 if a is not None and b is not None:
-                    pct = f" ({(b - a) / abs(a) * 100:+.0f}%)" if a else ""
+                    pct = f" ({(b - a) / a * 100:+.0f}%)" if a > 0 and b >= 0 else ""  # no % across zero or from a loss
                     changes.append(f"{label} {_nok(a)} → {_nok(b)}{pct}")
             if changes:
                 add(f"Change {prev_year}→{year}: " + "; ".join(changes) + ".", fin)

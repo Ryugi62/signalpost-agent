@@ -283,3 +283,19 @@ def test_role_mailbox_and_self_description_claims():
     emails = [c["value"] for c in claims if c["field"] == "contact_email"]
     assert emails == ["post@foo.no"]
     assert any(c["field"] == "self_description" for c in claims)
+
+
+def test_dotcom_candidate_requires_org_proof(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: host.endswith(".com"))
+
+    def fake_fetch(url, **kwargs):
+        return ({"status": "available", "source_url": url, "value": {
+            "final_url": "https://www.confecta.com/", "registered_domain": "confecta.com",
+            "title": "Confecta", "identity_text_excerpt": "Confecta Norge tlf 22 33 44 55", "pages": [], "social_links": []}},
+            {"requests": 2, "bytes": 10, "latencies_ms": [1]})
+    monkeypatch.setattr(fio, "fetch_website", fake_fetch)
+    profile = {"organisation_number": "912345678", "name": "CONFECTA AS",
+               "evidence": {"registry_live": {"value": {"phone": "22334455", "business_address": {}}}}}
+    found, _, _ = fio.discover_website(profile, collisions={"email_domain": {}, "phone": {"22334455": 1}, "address": {}})
+    assert found is None

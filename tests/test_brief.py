@@ -38,3 +38,14 @@ def test_brief_year_over_year_change():
         "external_claims": []}
     texts = " ".join(s["text"] for s in company_brief(profile)["sentences"])
     assert "Change 2024→2025: revenue NOK 1.0 m → NOK 2.0 m (+100%)." in texts
+
+
+def test_no_percentage_across_zero():
+    profile = {"organisation_number": "1", "name": "X AS", "legal_form": "AS", "evidence": {
+        "registry": {"status": "available", "source_url": "u"},
+        "financials": {"status": "available", "source_url": "f", "value": {"records": [
+            {"period": {"tilDato": "2025-12-31"}, "annual_result": 2_000.0},
+            {"period": {"tilDato": "2024-12-31"}, "annual_result": -36.0}]}}},
+        "external_claims": []}
+    texts = " ".join(s["text"] for s in company_brief(profile)["sentences"])
+    assert "annual result -NOK 36 → NOK 2 k." in texts
