@@ -170,7 +170,7 @@ def identity_proof(
     if phone and (collisions is None or phones.get(phone, 0) == 1):
         match = _digits_pattern(phone).search(joined)
         if match:
-            span = (_snippet(joined, match) + " [= registry phone]") if not personal else \
+            span = (re.sub(r"\s+", " ", match.group(0)) + " [= registry phone]") if not personal else \
                 "registry phone matched (value withheld; sole proprietorship; sha256 " + __import__("hashlib").sha256(phone.encode()).hexdigest()[:12] + ")"
             return {"proof": "contact", "reason": "legal name + registry phone (unique to this entity in the registry) on a fetched page", "snippet": span}
     postcode = re.sub(r"\D", "", str(reg.get("postcode") or ""))
@@ -184,7 +184,7 @@ def identity_proof(
     ):
         match = re.search(r"(?<!\d)" + postcode + r"(?!\d)", joined)
         if match:
-            span = (_snippet(joined, match) + " [= registry street + postcode]") if not personal else \
+            span = (" ".join(street_tokens).title() + " … " + match.group(0) + " [= registry street + postcode]") if not personal else \
                 "registry street+postcode matched (value withheld; sole proprietorship; sha256 " + __import__("hashlib").sha256(str(key).encode()).hexdigest()[:12] + ")"
             return {"proof": "contact", "reason": "legal name + registry street and postcode (unique to this entity in the registry) on a fetched page", "snippet": span}
     return {"proof": "none", "reason": "name matches but no unique org number, phone or address corroboration"}

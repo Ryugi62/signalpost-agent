@@ -234,3 +234,10 @@ def test_envelope_modules_carry_contract_availability():
     assert {m: v["availability"] for m, v in env["modules"].items()} == {"registry": "available", "website": "not_available", "jobs": "blocked", "wikidata": "failed"}
     allowed = {"available", "not_available", "blocked", "not_applicable", "ambiguous", "failed"}
     assert all(v["availability"] in allowed for v in env["modules"].values())
+
+
+def test_contact_snippet_is_only_the_matched_value():
+    from norway_company_agent.footprint.domain import identity_proof
+    profile = {"organisation_number": "810034882", "name": "FONIX FORLAG AS", "legal_form": "AS", "registry": {"phone": "+47 90066300"}}
+    proof = identity_proof(profile, ["Fønix Forlag AS · Kontakt John Bilek Forlegger +47 90066300"], collisions={"phone": {"90066300": 1}, "address": {}})
+    assert proof["proof"] == "contact" and "John" not in proof["snippet"] and "90066300" in proof["snippet"]
