@@ -1,0 +1,76 @@
+{
+  "run_id": "smoke-100-v1",
+  "started_at": "2026-10-04T06:55:19.730791Z",
+  "completed_at": "2026-10-04T07:00:16.240022Z",
+  "expected_count": 100,
+  "emitted_envelopes": 100,
+  "resumed_profiles": 0,
+  "profiles_fetched_this_run": 100,
+  "modules": [
+    "registry",
+    "accounting_obligation",
+    "registry_live",
+    "financials",
+    "roles",
+    "group",
+    "locations",
+    "website",
+    "website_discovery",
+    "jobs",
+    "wikidata"
+  ],
+  "registry": {
+    "registry_snapshot_sha256": "ec76476654c2e21a78d6434b32e30fb139d0360f1694fbc2d4fd75bf88b9eeba",
+    "registry_rows_scanned": 1158181,
+    "requested": 100,
+    "selected": 100
+  },
+  "operations": {
+    "requests": 825,
+    "bytes": 17966528,
+    "dns_lookups": 233,
+    "by_module": {
+      "website_discovery": 132,
+      "wikidata": 1,
+      "jobs": 143
+    },
+    "p50_ms": 1265,
+    "p95_ms": 1736
+  },
+  "validation": {
+    "passed": true,
+    "checks": {
+      "exact_expected_count": true,
+      "unique_organisation_numbers": true,
+      "all_entity_states_terminal": true,
+      "all_module_states_terminal": true,
+      "zero_silent_drops": true
+    },
+    "invalid_states": []
+  },
+  "batch_modules": {
+    "wikidata": {
+      "requests": 1,
+      "bytes": 562,
+      "orgs_with_claims": 0
+    },
+    "jobs": {
+      "requests": 143,
+      "bytes": 67910987,
+      "pages": 139,
+      "feed_sha256": "8579c2be062e15d0e131fa58a88aa837bb55a004f47c1dc32a9ddcb31d6d8337",
+      "active_entries": 9461,
+      "name_candidates": 2,
+      "details_fetched": 2,
+      "orgs_with_jobs": 2
+    }
+  },
+  "third_party_cost_usd": 0,
+  "external_coverage": {
+    "published_websites": 12,
+    "discovered_websites": 7,
+    "orgs_with_social": 4,
+    "orgs_with_jobs": 2,
+    "orgs_with_wikidata": 0
+  }
+}
