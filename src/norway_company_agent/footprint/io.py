@@ -136,7 +136,9 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
             if path_depth > 1 or strict["proof"] != "org" or not _sole_org_number(str(profile.get("organisation_number")), "\n".join(texts)):
                 attempts.append({"candidate": host, "final_url": value.get("final_url"), "result": "redirected_off_candidate"})
                 continue
-        full_name_host = from_email or host_base == "".join(t for t in full_tokens if t != "og")
+        # Contact proofs only on a domain spelled like the full legal name; registry-declared domains with another
+        # label (group/firm sites such as gaiaarkitekter.no for GAIA LISTA AS) need the exact org number.
+        full_name_host = host_base == "".join(t for t in full_tokens if t != "og")
         proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
         # Registry e-mail domains get no name-only shortcut: an address-named holding company can list its
         # owner's e-mail (CARLBERGVEIEN 7 AS -> personalpartner.no, fresh audit 2026-10-04), so org or unique-contact proof is required.

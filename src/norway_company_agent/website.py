@@ -307,7 +307,11 @@ def _dated_activity(base_url: str, soup: BeautifulSoup, metadata: dict[str, Any]
             items.append({"title": heading.get_text(" ", strip=True)[:200], "date": stamp[:10], "type": "article",
                           "url": urllib.parse.urljoin(base_url, href) if href else base_url, "method": "article-time"})
     unique: dict[tuple[str, str], dict[str, Any]] = {}
+    page_title = (soup.title.get_text(" ", strip=True) if soup.title else "").casefold()
     for item in items:
+        title = item["title"].casefold()
+        if "#webpage" in str(item.get("url")) or title == page_title or title.startswith(("beskyttet:", "privat:", "protected:", "private:")):
+            continue  # page-level SEO metadata or a protected post, not dated public activity
         if "2000-01-01" <= item["date"] <= "2099-12-31":
             unique.setdefault((item["date"], item["title"].casefold()), item)
     return sorted(unique.values(), key=lambda x: x["date"], reverse=True)[:limit]

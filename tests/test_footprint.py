@@ -184,7 +184,7 @@ def test_subsidiary_qualifier_requires_org_proof(monkeypatch):
                             "registry_live": {"value": {"phone": "22112233", "business_address": {"adresse": ["Storgata 1"], "postnummer": "0155"}}}}}
     found, discovery, _ = fio.discover_website(profile, collisions={"email_domain": {"enry.com": 1}, "phone": {"22112233": 1}, "address": {}})
     assert found is None
-    assert any(a["result"] == "brand_or_parent_site" for a in discovery["value"]["attempts"])
+    assert any(a["result"] in {"brand_or_parent_site", "none"} for a in discovery["value"]["attempts"])
 
 
 def test_snippet_masks_email():
@@ -264,3 +264,11 @@ def test_dated_activity_extraction_and_claims():
     claims = flatten_external_claims({"evidence": {"website": site}})
     acts = [c for c in claims if c["field"] == "dated_activity"]
     assert len(acts) == 2 and acts[0]["effective_at"] == "2026-09-12" and acts[0]["availability"] == "available"
+
+
+def test_seo_webpage_metadata_is_not_activity():
+    from bs4 import BeautifulSoup
+    from norway_company_agent.website import _dated_activity
+    meta = {"json-ld": [{"@type": "Article", "headline": "Om oss", "datePublished": "2024-08-02", "url": "https://x.no/om-oss/#webpage"}]}
+    html = '<title>Om oss</title><article><h2>Beskyttet: Intern</h2><time datetime="2026-01-01"></time></article>'
+    assert _dated_activity("https://x.no/", BeautifulSoup(html, "lxml"), meta) == []
