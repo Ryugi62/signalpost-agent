@@ -289,6 +289,9 @@ def attach_feed_activity(site: dict[str, Any], *, now: str | None = None, timeou
     url = value.get("feed_link")
     if not url or value.get("feed_activity"):
         return 0
+    domain = str(value.get("registered_domain") or _reg_domain(value.get("final_url")))
+    if not domain.endswith(".no") and "org_proof" not in str((value.get("identity_assessment") or {}).get("method")):
+        return 0  # a .com/.eu site without the org number may be the parent group's: its news is not this entity's
     record: dict[str, Any] = {"feed_url": url, "items": [], "retrieved_at": utc_now()}
     try:
         if not _robots_allowed(url, timeout):

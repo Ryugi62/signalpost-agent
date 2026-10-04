@@ -122,3 +122,16 @@ def test_ac25_jsonld_same_as_profiles_join_the_social_candidates():
     orgs = [{"@type": "Organization", "name": "Foo AS", "sameAs": ["https://www.facebook.com/foo", "https://www.instagram.com/foo_as/", "https://foo.no/"]}]
     merged = merge_social_links(anchors, structured_social_links(orgs))
     assert merged == [{"platform": "facebook", "url": "https://facebook.com/foo"}, {"platform": "instagram", "url": "https://instagram.com/foo_as"}]
+
+
+def test_ac23_group_site_without_org_number_gets_no_feed_read(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+    calls = []
+    monkeypatch.setattr(fio, "_get_feed", lambda url, max_bytes=1_000_000, timeout=10.0: calls.append(url) or (RSS.encode(), url))
+    monkeypatch.setattr(fio, "_robots_allowed", lambda url, timeout: True)
+    group = _site(feed_link="https://plasman.com/feed/", registered_domain="plasman.com", final_url="https://plasman.com/")
+    group["value"]["identity_assessment"]["method"] = "deterministic_name_org_evidence_v2"
+    assert fio.attach_feed_activity(group, now=NOW) == 0 and calls == []
+    proven = _site(feed_link="https://foo.com/feed/", registered_domain="foo.com", final_url="https://foo.com/")
+    proven["value"]["identity_assessment"]["method"] = "deterministic_domain_discovery_org_proof_v1"
+    assert fio.attach_feed_activity(proven, now=NOW) == 1
