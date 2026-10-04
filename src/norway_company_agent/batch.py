@@ -149,8 +149,12 @@ def terminal_envelope(
     module_states = {}
     for module in modules:
         record = profile.get("evidence", {}).get(module)
+        state = evidence_terminal_state(record)
         module_states[module] = {
-            "state": evidence_terminal_state(record),
+            "state": state,
+            # the same outcome in the contract's availability vocabulary
+            "availability": {"complete": "available", "not_found": "not_available", "not_applicable": "not_applicable", "ambiguous": "ambiguous",
+                             "blocked_policy": "blocked", "blocked_robots": "blocked", "source_error": "failed"}.get(state, "failed"),
             "retry_count": int((record or {}).get("retry_count") or 0),
             "final_timestamp": (record or {}).get("retrieved_at") or completed_at,
         }

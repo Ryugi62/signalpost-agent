@@ -224,3 +224,13 @@ def test_shrink_reservation_returns_the_rest():
     assert budget.available("x") == 50
     budget.shrink_reservation("jobs", 12)
     assert budget.available("x") == 88 and budget.available("jobs") == 100
+
+
+def test_envelope_modules_carry_contract_availability():
+    from norway_company_agent.batch import terminal_envelope
+    profile = {"organisation_number": "1", "evidence": {"registry": {"status": "available"}, "website": {"status": "not_found"},
+                                                         "jobs": {"status": "blocked", "note": "budget"}, "wikidata": {"status": "source_error"}}}
+    env = terminal_envelope(profile, run_id="r", modules=["registry", "website", "jobs", "wikidata"], started_at="a", completed_at="b")
+    assert {m: v["availability"] for m, v in env["modules"].items()} == {"registry": "available", "website": "not_available", "jobs": "blocked", "wikidata": "failed"}
+    allowed = {"available", "not_available", "blocked", "not_applicable", "ambiguous", "failed"}
+    assert all(v["availability"] in allowed for v in env["modules"].values())

@@ -170,7 +170,7 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
                 attempts.append({"candidate": host, "result": "no_dns"})
                 continue
             if fetches >= max_fetches or (host not in declared and generated_fetches >= max_generated_fetches):
-                attempts.append({"candidate": host, "result": "fetch_budget_exhausted"})
+                attempts.append({"candidate": host, "result": "not_fetched_candidate_limit"})  # per-company method limit, not the run budget
                 break
             if can_spend is not None and not can_spend():
                 attempts.append({"candidate": host, "result": "run_request_budget_exhausted"})
