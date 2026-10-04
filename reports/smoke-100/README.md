@@ -1,4 +1,4 @@
-# 100-company smoke test (v1)
+# 100-company smoke test (v2; v1 tables kept below)
 
 - Input: `smoke-companies.jsonl`, 100 random organisations from the public 411,160-company universe (`select_entry_batch.py --seed 20261004`).
 - Result: **100/100 terminal envelopes**, `validation.passed = true`, run time about 5 min, $0 third-party cost. Most of the time is the NAV feed walk, done once per batch in parallel with the per-company work.
@@ -12,6 +12,23 @@
 | Companies with active NAV vacancies (by org number) | 0 | **2** |
 | Companies with dated activity on their own site | 0 | **1** |
 | HTTP requests | 568 | 915 |
+
+## v2 (request gate, feed activity, JSON-LD profiles)
+
+- Smoke 100 (same companies): 100/100 envelopes in 5 min 13 s · **407 requests in total** (v1: 915) · 11 websites (6 discovered) · 3 with social · 2 with NAV jobs · 2 with dated activity (both from the site's own feed) · 99/100 with annual accounts.
+
+Same fixed batch (seed 20261013, 1,000 companies), companies with each external field:
+
+| | v1 (host re-run) | **v2 default** (strict: ≤1,950 requests in total, registry included) | v2 `--budget-scope external` (≤1,950 third-party requests, registry reads not capped) |
+|---|---:|---:|---:|
+| Official website | 77 | 48 | **84** |
+| Social profiles (companies / links) | 30 / 54 | 17 / 30 | **33 / 65** |
+| NAV jobs | 3 | 3 | 3 |
+| Dated activity | 3 | 6 | **9** |
+| Annual accounts | all (per-company calls) | 998 | 998 |
+| Requests: total / non-registry (sites, NAV, Wikidata) | 7,304 / 2,304 | **1,929 / 840** | 3,001 / 1,929 |
+
+The strict default gives up part of the website budget to keep every company's annual accounts inside 1,950 requests. If Builderr confirms that registry reads are not counted, `--budget-scope external` is the better setting on every external field.
 
 ## Fresh 1,000-company batches (frozen code, clean Linux container `python3.12-bookworm`, `uv sync --frozen`)
 

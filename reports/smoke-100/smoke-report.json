@@ -1,7 +1,7 @@
 {
-  "run_id": "smoke-100-rc7",
-  "started_at": "2026-10-04T09:26:50.901845Z",
-  "completed_at": "2026-10-04T09:31:53.272236Z",
+  "run_id": "smoke-100-v2",
+  "started_at": "2026-10-04T11:59:40.380908Z",
+  "completed_at": "2026-10-04T12:04:53.752748Z",
   "expected_count": 100,
   "emitted_envelopes": 100,
   "resumed_profiles": 0,
@@ -27,17 +27,21 @@
     "absent_from_snapshot": []
   },
   "operations": {
-    "requests": 915,
-    "bytes": 21117147,
-    "dns_lookups": 325,
+    "dns_lookups": 320,
+    "requests": 407,
     "by_module": {
-      "website_discovery": 222,
-      "website_registry": 49,
-      "wikidata": 1,
-      "jobs": 143
+      "activity_feed": 6,
+      "financials": 101,
+      "group": 6,
+      "jobs": 98,
+      "registry_batch": 1,
+      "registry_bulk": 2,
+      "website_discovery": 139,
+      "website_registry": 53,
+      "wikidata": 1
     },
-    "p50_ms": 1265,
-    "p95_ms": 1852
+    "p50_ms": 1276,
+    "p95_ms": 3073
   },
   "validation": {
     "passed": true,
@@ -51,32 +55,127 @@
     "invalid_states": []
   },
   "batch_modules": {
+    "registry_live": {
+      "requests": 1,
+      "chunks": 1,
+      "errors": 0
+    },
     "wikidata": {
       "requests": 1,
       "bytes": 562,
       "orgs_with_claims": 0
     },
+    "locations": {
+      "requests": 1,
+      "url": "https://data.brreg.no/enhetsregisteret/api/underenheter/lastned/csv",
+      "orgs_with_locations": 77
+    },
+    "roles": {
+      "requests": 1,
+      "url": "https://data.brreg.no/enhetsregisteret/api/roller/totalbestand",
+      "orgs_with_roles": 100
+    },
     "jobs": {
-      "requests": 143,
-      "bytes": 67698338,
-      "pages": 139,
-      "feed_sha256": "459c0be25c48716381335e1b2480722173c26332aa2e462d7840575cd57da34e",
-      "active_entries": 9463,
+      "requests": 98,
+      "bytes": 45365655,
+      "pages": 94,
+      "feed_sha256": "9bb60baf81ae620f12f911a55cbe8de067283a086e9a70c0706fd756fb49f88b",
+      "active_entries": 9194,
       "name_candidates": 2,
       "details_fetched": 2,
       "orgs_with_jobs": 2
     }
   },
   "third_party_cost_usd": 0,
+  "request_budget": {
+    "limit": 1950,
+    "spent": 407,
+    "spent_exempt": 0,
+    "exempt": [],
+    "total_outbound": 407,
+    "remaining": 1543,
+    "denied": 0,
+    "by_category": {
+      "activity_feed": 6,
+      "financials": 101,
+      "group": 6,
+      "jobs": 98,
+      "registry_batch": 1,
+      "registry_bulk": 2,
+      "website_discovery": 139,
+      "website_registry": 53,
+      "wikidata": 1
+    },
+    "denied_by_category": {},
+    "reserved": {
+      "jobs": 23
+    },
+    "ceilings": {
+      "registry_batch": 3,
+      "registry_bulk": 2,
+      "wikidata": 2,
+      "jobs": 121,
+      "website_registry": 60,
+      "activity_feed": 17,
+      "financials": 102,
+      "group": 6
+    },
+    "plan": {
+      "limit": 1950,
+      "ceilings": {
+        "registry_batch": 3,
+        "registry_bulk": 2,
+        "wikidata": 2,
+        "jobs": 121,
+        "website_registry": 60,
+        "activity_feed": 17,
+        "website_discovery": 1637,
+        "financials": 102,
+        "group": 6
+      },
+      "order": [
+        "registry_batch",
+        "registry_bulk",
+        "wikidata",
+        "jobs",
+        "website_registry",
+        "activity_feed",
+        "website_discovery",
+        "financials",
+        "group"
+      ],
+      "unallocated": 0,
+      "wanted": {
+        "registry_batch": 3,
+        "registry_bulk": 2,
+        "wikidata": 2,
+        "jobs": 121,
+        "website_registry": 60,
+        "activity_feed": 17,
+        "financials": 102,
+        "group": 6
+      }
+    },
+    "discovery_phase_started_with": 1823,
+    "after_high_yield_discovery": 1777,
+    "after_low_yield_discovery": 1556,
+    "high_yield_companies": 24,
+    "low_yield_companies": 76
+  },
   "contact_proofs_enabled": true,
   "external_coverage": {
-    "published_websites": 12,
-    "discovered_websites": 7,
-    "orgs_with_social": 4,
+    "published_websites": 11,
+    "discovered_websites": 6,
+    "orgs_with_social": 3,
     "orgs_with_jobs": 2,
     "orgs_with_contact_email": 7,
-    "orgs_with_self_description": 9,
-    "orgs_with_dated_activity": 1,
-    "orgs_with_wikidata": 0
+    "orgs_with_self_description": 8,
+    "orgs_with_dated_activity": 2,
+    "orgs_with_feed_activity": 2,
+    "orgs_with_wikidata": 0,
+    "registry_sites_proven_by_discovery_gate": 0,
+    "orgs_with_financials": 99,
+    "orgs_with_roles": 100,
+    "orgs_with_group": 6
   }
 }

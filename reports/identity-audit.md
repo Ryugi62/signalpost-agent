@@ -48,3 +48,14 @@ The one wrong case was **CARLBERGVEIEN 7 AS → personalpartner.no**. A holding 
 **Final rules (v1):** 0 wrong among the 35 discoveries of a batch never seen before (seed 20261013). Across the last five frozen audits (seeds 20261009–20261013, 208 discoveries) there were 0 wrong entities and 1 questionable brand site, which the final rule rejects. The audit was done by the author, reading the URL and the proof span. It was not an independent second reviewer.
 
 **Privacy.** Snippets for org proofs keep only about 40 characters around the number, and e-mail addresses are masked. Contact proofs store only a short hash of the matched phone or address, never the value. Personal names and contact persons from company pages are not published.
+
+## v2 audits (strict request budget, feed activity, JSON-LD profiles)
+
+v2 changes the discovery path (homepage-first page budget, registry-declared sites re-checked with the proof gate at no request cost, declared domains with another label need the org number) and adds two claim sources on verified sites: the site's own RSS/Atom posts feed and its JSON-LD `sameAs` profiles. Two batches never seen before were run and every published discovery was read (URL, title, proof type, proof span):
+
+| Batch / code | Budget scope | Discovered and published | Org proof | Unique phone or address | Wrong entity | Other findings → rule |
+|---|---|---:|---:|---:|---:|---|
+| seed 20261014 / fd7bd69 | external (registry reads not capped, to get ≥35 discoveries through the same identity code) | 35 | 23 | 12 | **0** | Wix sample posts on a verified church site ("Tips for writing great posts…") → site-builder sample posts are dropped from feed activity |
+| seed 20261015 / 95c15ab | strict (default) | 6 | 5 | 1 | **0** | PLASMAN AS → plasman.com (registry-declared `.com` group site, name gate): its feed is the parent group's news → feeds are read only on `.no` sites or sites with an org-number proof |
+
+**Result (v2 rules).** 0 wrong entities among 41 discoveries in two new batches. For the 22 companies with dated activity in the two batches, the three newest items of each were read; after the two fixes above, every item read is a dated post on the company's own site. JSON-LD profiles pass the same handle gate as footer links; on four earlier batches the gate admitted 0–11 extra profiles per batch and rejected parent/manager profiles (for example `alti-forvaltning-as` for SANDAKER SENTER AS, `peab-asfalt-norge` for SWEROCK AS). Author audit, not an independent reviewer.
