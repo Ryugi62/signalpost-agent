@@ -164,3 +164,29 @@ def test_contact_proof_keeps_a_text_span_for_companies_only():
     assert company["proof"] == "contact" and "51 66 00 00" in company["snippet"]
     sole = identity_proof({**base, "legal_form": "ENK"}, page, collisions=unique)
     assert "51 66" not in sole["snippet"] and "sha256" in sole["snippet"]
+
+
+def test_nav_page_timeout_is_retried_but_budget_refusal_is_not(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+    calls = []
+
+    def flaky(url, headers, timeout=30.0):
+        calls.append(url)
+        if len(calls) == 1:
+            raise TimeoutError("The read operation timed out")
+        return b"ok", 1
+
+    monkeypatch.setattr(fio, "_get", flaky)
+    monkeypatch.setattr(fio.time, "sleep", lambda s: None)
+    assert fio._get_retrying("https://nav/feed", {}) == (b"ok", 1) and len(calls) == 2
+
+    def refused(url, headers, timeout=30.0):
+        calls.append(url)
+        raise OSError("run request budget exhausted (1950)")
+
+    calls.clear()
+    monkeypatch.setattr(fio, "_get", refused)
+    import pytest
+    with pytest.raises(OSError):
+        fio._get_retrying("https://nav/feed", {})
+    assert len(calls) == 1

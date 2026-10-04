@@ -296,12 +296,16 @@ def main() -> None:
                 profile["evidence"]["group"] = budget_blocked("group", "official_group_structure", BRREG_GROUP.format(org=org))
         return {"latencies_ms": latencies}
 
+    if nav_future is None or nav_future.done():
+        budget.release("jobs")  # the feed walk is over (or failed early): its unused reservation goes back to the pool
     budget.release("financials")
     budget.release("group")
     budget.set_ceiling("financials", None)  # retries may also use whatever discovery left unspent
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for metric in pool.map(per_company_registry, profiles):
             operations["latencies_ms"].extend(metric["latencies_ms"])
+    if nav_future is not None and nav_future.done():
+        budget.release("jobs")
     run_discovery(low_yield)  # whatever the registry reads left
     low_pass_end = budget.snapshot()
 

@@ -323,8 +323,24 @@ def _get(url: str, headers: dict[str, str], timeout: float = 30.0) -> tuple[byte
     return body, int((time.monotonic() - started) * 1000)
 
 
+def _get_retrying(url: str, headers: dict[str, str], *, attempts: int = 3, timeout: float = 30.0, pause: float = 2.0) -> tuple[bytes, int]:
+    """A transient timeout on one feed page must not cost the whole hiring family for the day (clean-container run
+    2026-10-04: the first NAV page timed out once and every company lost its jobs state)."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return _get(url, headers, timeout=timeout)
+        except Exception as exc:  # budget refusals are not retried
+            last = exc
+            if "budget" in str(exc).casefold() or attempt == attempts - 1:
+                break
+            time.sleep(pause * (attempt + 1))
+    assert last is not None
+    raise last
+
+
 def nav_public_token() -> str:
-    body, _ = _get(f"{NAV_FEED}/api/publicToken", {})
+    body, _ = _get_retrying(f"{NAV_FEED}/api/publicToken", {})
     return body.decode().strip().splitlines()[-1].strip()
 
 
@@ -341,7 +357,7 @@ def nav_active_entries(days: int, *, cache_dir: Path | None = None, max_pages: i
     page_hashes = []
     while url and metrics["pages"] < max_pages:
         try:
-            body, _ = _get(url, first_headers if metrics["pages"] == 0 else headers)
+            body, _ = _get_retrying(url, first_headers if metrics["pages"] == 0 else headers)
         except Exception as exc:
             metrics["requests"] += 1
             if not metrics["pages"]:
