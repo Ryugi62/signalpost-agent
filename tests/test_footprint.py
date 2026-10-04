@@ -228,3 +228,24 @@ def test_flatten_with_jobs_and_wikidata_does_not_crash():
     wd = {"status": "available", "value": {"claims": [{"field": "facebook", "value": "https://www.facebook.com/x", "source_url": "w"}]}}
     claims = flatten_external_claims({"evidence": {"jobs": jobs, "wikidata": wd}})
     assert any(c["field"] == "job_postings" and c["availability"] == "available" for c in claims)
+
+
+def test_email_domain_needs_org_or_unique_contact(monkeypatch):
+    from norway_company_agent.footprint import io as fio
+
+    monkeypatch.setattr(fio, "_resolves", lambda host, timeout=4.0: True)
+
+    def fake_fetch(url, **kwargs):
+        return ({"status": "available", "source_url": "https://personalpartner.no/", "value": {
+            "final_url": "https://personalpartner.no/", "registered_domain": "personalpartner.no",
+            "title": "Personal Partner – Carlbergveien 7", "identity_text_excerpt": "Besøk oss i Carlbergveien 7, 1526 Moss",
+            "main_text_excerpt": "Vi leverer personell " * 20, "pages": [], "social_links": []}}, {"requests": 2, "bytes": 10, "latencies_ms": [1]})
+
+    monkeypatch.setattr(fio, "fetch_website", fake_fetch)
+    profile = {"organisation_number": "912345678", "name": "CARLBERGVEIEN 7 AS",
+               "evidence": {"registry": {"value": {"epostadresse": "x@personalpartner.no"}},
+                            "registry_live": {"value": {"business_address": {"adresse": ["Carlbergveien 7"], "postnummer": "1526"}}}}}
+    from norway_company_agent.footprint.domain import address_key
+    found, _, _ = fio.discover_website(profile, collisions={"email_domain": {"personalpartner.no": 1}, "phone": {},
+                                                             "address": {address_key("Carlbergveien 7", "1526"): 2}})
+    assert found is None

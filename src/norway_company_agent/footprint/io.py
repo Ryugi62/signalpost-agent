@@ -131,13 +131,8 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
                 continue
         full_name_host = from_email or host_base == "".join(t for t in full_tokens if t != "og")
         proof = identity_proof(proof_profile, _page_texts(value), allow_contact=full_name_host, collisions=collisions)
-        if from_email and proof["proof"] == "none":
-            # Registry-declared e-mail domain: same standing as a registry-listed website, so the starter's
-            # registry-website name gate applies (all legal-name tokens in homepage identity, parked pages rejected).
-            gate = assess_website_identity({"organisation_number": profile.get("organisation_number"), "name": name,
-                                            "evidence": {"website": {"value": value, "source_url": record.get("source_url")}}})
-            if gate.get("publishable"):
-                proof = {"proof": "registry_email", "reason": "domain of the registry-declared company e-mail; " + "; ".join(gate.get("reasons") or [])}
+        # Registry e-mail domains get no name-only shortcut: an address-named holding company can list its
+        # owner's e-mail (CARLBERGVEIEN 7 AS -> personalpartner.no, fresh audit 2026-10-04), so org or unique-contact proof is required.
         if proof["proof"] == "none" and "not all present" not in proof["reason"]:
             # Name matches but no corroboration yet: read one conventional contact page (bounded, same domain).
             seen = {pg.get("url", "").rstrip("/") for pg in value.get("pages") or []}
