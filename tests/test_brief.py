@@ -27,3 +27,14 @@ def test_brief_cites_sources_and_lists_unknowns():
     topics = {u["topic"] for u in brief["unknowns"]}
     assert {"employees", "revenue", "website", "hiring"} <= topics
     assert brief["llm"] is False
+
+
+def test_brief_year_over_year_change():
+    profile = {"organisation_number": "1", "name": "X AS", "legal_form": "AS", "evidence": {
+        "registry": {"status": "available", "source_url": "u"},
+        "financials": {"status": "available", "source_url": "f", "value": {"records": [
+            {"period": {"tilDato": "2025-12-31"}, "revenue": 2_000_000.0, "annual_result": 100_000.0},
+            {"period": {"tilDato": "2024-12-31"}, "revenue": 1_000_000.0, "annual_result": None}]}}},
+        "external_claims": []}
+    texts = " ".join(s["text"] for s in company_brief(profile)["sentences"])
+    assert "Change 2024→2025: revenue NOK 1.0 m → NOK 2.0 m (+100%)." in texts

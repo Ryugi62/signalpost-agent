@@ -272,3 +272,14 @@ def test_seo_webpage_metadata_is_not_activity():
     meta = {"json-ld": [{"@type": "Article", "headline": "Om oss", "datePublished": "2024-08-02", "url": "https://x.no/om-oss/#webpage"}]}
     html = '<title>Om oss</title><article><h2>Beskyttet: Intern</h2><time datetime="2026-01-01"></time></article>'
     assert _dated_activity("https://x.no/", BeautifulSoup(html, "lxml"), meta) == []
+
+
+def test_role_mailbox_and_self_description_claims():
+    site = {"status": "available", "source_url": "https://foo.no/", "retrieved_at": "t", "value": {"final_url": "https://www.foo.no/",
+            "identity_assessment": {"publishable": True, "reasons": ["x"]}, "social_links": [], "pages": [],
+            "description": "Foo AS leverer rørleggertjenester i hele Rogaland siden 1987.",
+            "identity_text_excerpt": "post@foo.no ola.nordmann@foo.no info@gmail.com"}}
+    claims = flatten_external_claims({"evidence": {"website": site}})
+    emails = [c["value"] for c in claims if c["field"] == "contact_email"]
+    assert emails == ["post@foo.no"]
+    assert any(c["field"] == "self_description" for c in claims)

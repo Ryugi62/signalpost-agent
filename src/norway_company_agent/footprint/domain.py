@@ -62,6 +62,8 @@ def domain_candidates(name: Any, *, limit: int = 4, brand_names: Iterable[Any] =
             host = f"{base}.no"
             if host not in out:
                 out.append(host)
+    if _label_ok(bases[0]) and len(bases[0]) >= 6:
+        out.append(f"{bases[0]}.com")  # last resort; the same on-site proof gate applies
     return out[:limit]
 
 
@@ -109,6 +111,8 @@ def _other_org_numbers(org: str, text: str) -> set[str]:
     return found
 
 
+ROLE_MAILBOXES = {"post", "info", "kontakt", "contact", "firmapost", "salg", "sales", "booking", "kundeservice", "service",
+                  "support", "ordre", "order", "bestilling", "resepsjon", "hello", "hei", "mail", "office", "kontor", "admin", "faktura"}
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
@@ -282,6 +286,29 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
         if not activity:
             claims.append({"field": "dated_activity", "value": None, "availability": "not_available", "source_url": value.get("final_url"),
                            "retrieved_at": site.get("retrieved_at"), "note": "No dated article/event markup on the fetched pages of the verified site"})
+        description = str(value.get("description") or "").strip()
+        if len(description) >= 30:
+            claims.append({
+                "field": "self_description", "value": description[:400], "availability": "available",
+                "source_url": value.get("final_url") or site.get("source_url"), "source_class": "company_owned_promotional_copy",
+                "retrieved_at": site.get("retrieved_at"), "content_sha256": site.get("content_sha256"),
+                "method": "verified_site_meta_description", "date_basis": "retrieved_at (live company page)",
+                "note": "Company's own description of its business; not an independent assessment",
+            })
+        domain = _reg_domain(value.get("final_url") or site.get("source_url"))
+        emails: dict[str, str] = {}
+        for source in [value, *(value.get("pages") or [])]:
+            for match in EMAIL_RE.findall(str(source.get("identity_text_excerpt") or "")):
+                local, _, host = match.casefold().partition("@")
+                if local in ROLE_MAILBOXES and _reg_domain("https://" + host) == domain:
+                    emails.setdefault(match.casefold(), source.get("url") or value.get("final_url"))
+        for address, page in list(emails.items())[:3]:
+            claims.append({
+                "field": "contact_email", "value": address, "availability": "available", "source_url": page,
+                "source_class": "verified_company_site_contact", "retrieved_at": site.get("retrieved_at"),
+                "method": "role_mailbox_on_verified_site", "date_basis": "retrieved_at (live company page)",
+                "note": "Generic company mailbox on the company's own domain; personal addresses are never published",
+            })
         for link in value.get("social_links") or []:
             claims.append({
                 "field": link.get("platform"), "value": link.get("url"), "availability": "available",

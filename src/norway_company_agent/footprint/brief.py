@@ -70,6 +70,18 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
                 bits.append(f"{label} {text}")
         if bits:
             add(f"Latest filed accounts ({year}): " + ", ".join(bits) + ".", fin)
+        dated = sorted((r for r in records if (r.get("period") or {}).get("tilDato")), key=lambda r: r["period"]["tilDato"], reverse=True)
+        if len(dated) >= 2:
+            prev = dated[1]
+            prev_year = (prev["period"]["tilDato"] or "")[:4]
+            changes = []
+            for label, key in (("revenue", "revenue"), ("annual result", "annual_result"), ("equity", "equity")):
+                a, b = prev.get(key), latest.get(key)
+                if a is not None and b is not None:
+                    pct = f" ({(b - a) / abs(a) * 100:+.0f}%)" if a else ""
+                    changes.append(f"{label} {_nok(a)} → {_nok(b)}{pct}")
+            if changes:
+                add(f"Change {prev_year}→{year}: " + "; ".join(changes) + ".", fin)
         if latest.get("revenue") is None:
             unknowns.append({"topic": "revenue", "note": f"No revenue line in the {year} filing; not converted to zero."})
     else:
@@ -97,6 +109,9 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
         add(f"{len(locations)} registered workplace(s)" + (f" in {', '.join(places[:5])}" if places else "") + ".", loc_rec)
 
     claims = profile.get("external_claims") or []
+    selfdesc = next((c for c in claims if c.get("field") == "self_description" and c.get("availability") == "available"), None)
+    if selfdesc:
+        add(f"In its own words (company website): \"{selfdesc['value'][:220]}\"", selfdesc, selfdesc.get("source_url"))
     site = next((c for c in claims if c.get("field") == "official_website" and c.get("availability") == "available"), None)
     if site:
         how = "found from its own domain and proven on the site" if "discovery" in str(site.get("method")) else "listed in the registry and verified"
