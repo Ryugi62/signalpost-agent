@@ -163,13 +163,16 @@ def identity_proof(
     if _other_org_numbers(org, joined):
         return {"proof": "none", "reason": "site pages list other org numbers; name+contact proof not accepted"}
     reg = profile.get("registry") or {}
+    personal = str(profile.get("legal_form") or "").upper() in {"ENK", ""}  # a sole proprietor's phone/address is personal data
     phones = (collisions or {}).get("phone") or {}
     addresses = (collisions or {}).get("address") or {}
     phone = _phone_digits(reg.get("phone"))
     if phone and (collisions is None or phones.get(phone, 0) == 1):
         match = _digits_pattern(phone).search(joined)
         if match:
-            return {"proof": "contact", "reason": "legal name + registry phone (unique to this entity in the registry) on a fetched page", "snippet": "registry phone matched (value withheld; sha256 " + __import__("hashlib").sha256(phone.encode()).hexdigest()[:12] + ")"}
+            span = (_snippet(joined, match) + " [= registry phone]") if not personal else \
+                "registry phone matched (value withheld; sole proprietorship; sha256 " + __import__("hashlib").sha256(phone.encode()).hexdigest()[:12] + ")"
+            return {"proof": "contact", "reason": "legal name + registry phone (unique to this entity in the registry) on a fetched page", "snippet": span}
     postcode = re.sub(r"\D", "", str(reg.get("postcode") or ""))
     street_tokens = [t for t in re.findall(r"[a-z]{3,}", _ascii(reg.get("street"))) if t not in {"postboks", "pb"}]
     key = address_key(reg.get("street"), reg.get("postcode"))
@@ -181,7 +184,9 @@ def identity_proof(
     ):
         match = re.search(r"(?<!\d)" + postcode + r"(?!\d)", joined)
         if match:
-            return {"proof": "contact", "reason": "legal name + registry street and postcode (unique to this entity in the registry) on a fetched page", "snippet": "registry street+postcode matched (value withheld; sha256 " + __import__("hashlib").sha256(str(key).encode()).hexdigest()[:12] + ")"}
+            span = (_snippet(joined, match) + " [= registry street + postcode]") if not personal else \
+                "registry street+postcode matched (value withheld; sole proprietorship; sha256 " + __import__("hashlib").sha256(str(key).encode()).hexdigest()[:12] + ")"
+            return {"proof": "contact", "reason": "legal name + registry street and postcode (unique to this entity in the registry) on a fetched page", "snippet": span}
     return {"proof": "none", "reason": "name matches but no unique org number, phone or address corroboration"}
 
 
@@ -262,7 +267,7 @@ def _reg_domain(url: Any) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
-def activity_allowed(value: dict[str, Any], name: Any) -> bool:
+def activity_allowed(value: dict[str, Any], name: Any, *, in_group: bool = False) -> bool:
     """Whether a verified site's own news may be attributed to this exact entity (dated activity, feed): the site
     carries the org number or a registry-unique contact proof, or it is a .no domain spelled like the full legal name.
     A registry-declared group or brand site (hyr.no for HYR BERGEN AS, plasman.com for PLASMAN AS) passes the website
@@ -270,12 +275,24 @@ def activity_allowed(value: dict[str, Any], name: Any) -> bool:
     assessment = value.get("identity_assessment") or {}
     method = str(assessment.get("method") or "")
     reasons = " ".join(str(r) for r in assessment.get("reasons") or [])
-    if "org_proof" in method or "contact_proof" in method or "exact organisation number" in reasons:
+    if "org_proof" in method or "contact_proof" in method or any(str(r).startswith("exact organisation number") for r in assessment.get("reasons") or []):
         return True
+    if in_group:
+        return False  # part of a registered group: a name-spelled domain may still be the group's shared site, so a proof is needed
     domain = str(value.get("registered_domain") or _reg_domain(value.get("final_url")))
     label = domain.split(".")[0].replace("-", "")
     tokens = [t for t in name_tokens(name) if t != "og"]
     return domain.endswith(".no") and bool(tokens) and label == "".join(tokens)
+
+
+def in_registered_group(profile: dict[str, Any]) -> bool:
+    ev = profile.get("evidence") or {}
+    live = (ev.get("registry_live") or {}).get("value") or {}
+    raw = (ev.get("registry") or {}).get("value") or {}
+    flag = live.get("in_group") if isinstance(live, dict) else None
+    if flag is None and isinstance(raw, dict):
+        flag = str(raw.get("erIKonsern") or "").casefold() in {"true", "1", "ja"}
+    return bool(flag)
 
 
 def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -295,8 +312,11 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             "proof_snippet": assessment.get("proof_snippet"),
             "date_basis": "retrieved_at (live company page; no publication date)",
         })
+        if not activity_allowed(value, profile.get("name"), in_group=in_registered_group(profile)):
+            claims[-1]["site_relationship"] = ("declared by this entity in the registry; the domain is not spelled like its legal name and the site shows "
+                                               "no org number, so it may be a group or brand site (its news is not attributed to this entity)")
         activity: dict[tuple[str, str], dict[str, Any]] = {}
-        allowed = activity_allowed(value, profile.get("name"))
+        allowed = activity_allowed(value, profile.get("name"), in_group=in_registered_group(profile))
         site_domain = _reg_domain(value.get("final_url") or site.get("source_url"))
         name_titles = {re.sub(r"[^a-z0-9]+", " ", _ascii(profile.get("name"))).strip(), " ".join(name_tokens(profile.get("name")))}
         withheld = 0
@@ -314,6 +334,12 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 activity.setdefault((item.get("date"), str(item.get("title")).casefold()),
                                     {**item, "page": source.get("url") or value.get("final_url"),
                                      "retrieved_at": source.get("retrieved_at") or site.get("retrieved_at"), "page_sha256": source.get("content_sha256")})
+        # A bilingual site lists each post twice (/post/x and /en/post/x-translated): keep the primary-language copies.
+        LANG = re.compile(r"^/(en|de|sv|da|fr|es|nl|fi|pl)(/|$)")
+        def _path(item: dict[str, Any]) -> str:
+            return re.sub(r"^https?://[^/]+", "", str(item.get("url") or ""))
+        if any(LANG.match(_path(i)) for i in activity.values()) and any(not LANG.match(_path(i)) for i in activity.values()):
+            activity = {k: v for k, v in activity.items() if not LANG.match(_path(v))}
         for item in sorted(activity.values(), key=lambda x: x.get("date") or "", reverse=True)[:10]:
             from_feed = item.get("method") == "rss"
             claim = {
@@ -326,7 +352,13 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             if from_feed and item.get("page_sha256"):
                 claim["content_sha256"] = item["page_sha256"]
             claims.append(claim)
-        if not activity:
+        feed_state = (value.get("feed_activity") or {})
+        if not activity and allowed and value.get("feed_link") and (not feed_state or feed_state.get("skipped") or feed_state.get("error")):
+            unread = "blocked" if (not feed_state or feed_state.get("skipped") or "budget" in str(feed_state.get("error")).casefold()) else "failed"
+            claims.append({"field": "dated_activity", "value": None, "availability": unread, "source_url": value.get("feed_link"),
+                           "retrieved_at": feed_state.get("retrieved_at") or site.get("retrieved_at"),
+                           "note": f"The site's own feed was not read in this run ({feed_state.get('skipped') or feed_state.get('error') or 'request budget or run deadline (policy)'})"})
+        elif not activity:
             note = ("The verified site is a registry-declared group or brand site (no org number on it, domain not spelled like the legal name); "
                     f"its {withheld} dated item(s) are not attributed to this entity" if withheld else
                     "No dated article/event markup on the fetched pages of the verified site, and no dated post in its own feed")
@@ -352,6 +384,7 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             claims.append({
                 "field": "contact_email", "value": address, "availability": "available", "source_url": page,
                 "source_class": "verified_company_site_contact", "retrieved_at": site.get("retrieved_at"),
+                "content_sha256": next((pg.get("content_sha256") for pg in [value, *(value.get("pages") or [])] if (pg.get("url") or pg.get("final_url")) == page), site.get("content_sha256")),
                 "method": "role_mailbox_on_verified_site", "date_basis": "retrieved_at (live company page)",
                 "note": "Generic company mailbox on the company's own domain; personal addresses are never published",
             })
@@ -365,6 +398,10 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             claims.append({"field": "social_profiles", "value": None, "availability": "not_available", "source_url": value.get("final_url"),
                            "retrieved_at": site.get("retrieved_at"),
                            "note": "No company-owned profile whose handle carries the legal name is linked from the verified site"})
+        else:
+            claims.append({"field": "social_profiles", "value": [link.get("url") for link in value.get("social_links") or []], "availability": "available",
+                           "source_url": value.get("final_url") or site.get("source_url"), "retrieved_at": site.get("retrieved_at"),
+                           "note": "Summary row; one claim per profile follows (field = platform)"})
         for link in value.get("social_links") or []:
             claims.append({
                 "field": link.get("platform"), "value": link.get("url"), "availability": "available",
@@ -388,6 +425,7 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
                        "retrieved_at": site.get("retrieved_at") or discovery.get("retrieved_at"),
                        "checked": ["registry website field"] + [f"{a.get('candidate')}: {a.get('result')}" for a in attempts],
                        "note": ("Not checked: " + str(discovery.get("note") or site.get("note") or "request-budget policy") if state == "blocked" else
+                                "A candidate site was found but it does not prove this exact entity (no org number or registry-unique contact); withheld, see 'checked'." if state == "ambiguous" else
                                 "Not found by the methods listed in 'checked' as of retrieved_at; uncertain matches are withheld.")})
         for family in ("social_profiles", "dated_activity", "contact_email", "self_description"):
             claims.append({"field": family, "value": None, "availability": "blocked" if state == "blocked" else "not_available",

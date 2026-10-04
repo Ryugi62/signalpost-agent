@@ -122,7 +122,7 @@ def iter_role_elements(gz_chunks: Iterable[bytes], wanted: set[str]) -> Iterator
 def _open(url: str, timeout: float):
     import urllib.request
 
-    request = urllib.request.Request(url, headers={"User-Agent": "signalpost-exact-id-agent/2.0 (+submit@builderr.ai entry)", "Accept": "*/*"})
+    request = urllib.request.Request(url, headers={"User-Agent": "signalpost-exact-id-agent/2.0 (+https://github.com/Ryugi62/signalpost-agent)", "Accept": "*/*"})
     return urllib.request.urlopen(request, timeout=timeout)
 
 

@@ -109,3 +109,58 @@ def test_robots_rfc9309(monkeypatch):
     monkeypatch.setattr(W.SAFE_OPENER, "open", raiser(OSError("run request budget exhausted (1950)")))
     assert W._robots_allowed("https://d.no/x", 5) is False and "https://d.no/robots.txt" not in W._ROBOTS_CACHE
     W._ROBOTS_CACHE.clear()
+
+
+def test_output_keeps_no_page_text_and_nothing_from_unverified_sites():
+    from norway_company_agent.footprint.redact import redact_for_output
+    page = {"url": "https://therma.no/kontakt", "title": "Kontakt", "main_text_excerpt": "Ola Nordmann mobil 912 34 567 ola@therma.no",
+            "identity_text_excerpt": "ola@therma.no", "dated_activity": [{"title": "x"}]}
+    unverified = {"status": "available", "value": {"final_url": "https://therma.no/", "title": "Therma", "description": "Kulde",
+                  "main_text_excerpt": "Ola Nordmann", "identity_text_excerpt": "912 34 567", "social_links": [{"url": "https://facebook.com/therma"}],
+                  "pages": [page], "identity_assessment": {"publishable": False}}}
+    profile = redact_for_output({"evidence": {"website": unverified}})
+    dumped = str(profile)
+    assert "Ola" not in dumped and "912 34 567" not in dumped and "facebook" not in dumped and "Kulde" not in dumped
+    assert profile["evidence"]["website"]["value"]["title"] == "Therma"
+    verified = {"status": "available", "value": {"final_url": "https://foo.no/", "description": "Foo leverer rør", "main_text_excerpt": "Kari 99999999",
+                "social_links": [{"url": "https://facebook.com/foo"}], "pages": [], "identity_assessment": {"publishable": True}}}
+    kept = redact_for_output({"evidence": {"website": verified}})["evidence"]["website"]["value"]
+    assert "main_text_excerpt" not in kept and kept["description"] == "Foo leverer rør" and kept["social_links"]
+
+
+def test_group_handles_are_not_the_entity():
+    from norway_company_agent.identity import assess_social_identity
+    profile = {"name": "FJØSSYSTEMER AS"}
+    assert not assess_social_identity(profile, {"platform": "facebook", "url": "https://facebook.com/fjossystemergruppen"})["publishable"]
+    assert assess_social_identity(profile, {"platform": "facebook", "url": "https://facebook.com/fjossystemer"})["publishable"]
+
+
+def test_group_member_needs_a_proof_for_activity():
+    item = {"title": "Nytt lager", "date": "2026-03-01", "url": "https://fjossystemer.no/nytt-lager", "method": "json-ld"}
+    site = _site("https://fjossystemer.no/", dated_activity=[item])
+    profile = {"name": "FJØSSYSTEMER AS", "evidence": {"website": site, "registry_live": {"status": "available", "value": {"in_group": True}}}}
+    acts = [c for c in flatten_external_claims(profile) if c["field"] == "dated_activity"]
+    assert acts[0]["availability"] == "not_available"
+
+
+def test_unread_feed_is_blocked_not_absent():
+    site = _site("https://foo.no/", feed_link="https://foo.no/feed/", feed_activity={"items": [], "skipped": "request budget or run deadline (policy)"})
+    acts = [c for c in flatten_external_claims({"name": "FOO AS", "evidence": {"website": site}}) if c["field"] == "dated_activity"]
+    assert acts[0]["availability"] == "blocked"
+
+
+def test_truncated_nav_feed_fails_instead_of_reporting_no_vacancy():
+    from norway_company_agent.footprint import io as fio
+    out, _ = fio.nav_jobs_for_batch({"1": {"name": "FOO AS"}}, prefetched=({}, {"requests": 3, "truncated": "page cap 3 reached"}))
+    assert out["1"]["status"] == "source_error" and "incomplete" in out["1"]["note"]
+
+
+def test_contact_proof_keeps_a_text_span_for_companies_only():
+    from norway_company_agent.footprint.domain import identity_proof
+    base = {"organisation_number": "810034882", "name": "SANDNES ELEKTRISKE AS", "registry": {"phone": "+47 51 66 00 00"}}
+    unique = {"phone": {"51660000": 1}, "address": {}}
+    page = ["Sandnes Elektriske AS · Telefon 51 66 00 00"]
+    company = identity_proof({**base, "legal_form": "AS"}, page, collisions=unique)
+    assert company["proof"] == "contact" and "51 66 00 00" in company["snippet"]
+    sole = identity_proof({**base, "legal_form": "ENK"}, page, collisions=unique)
+    assert "51 66" not in sole["snippet"] and "sha256" in sole["snippet"]

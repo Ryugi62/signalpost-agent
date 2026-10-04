@@ -155,7 +155,8 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
     declared = set(registry_hosts) | set(declared_extra) | ({email_host} if email_host else set()) | ({prior_host} if prior_host else set())
     metrics = {"requests": 0, "bytes": 0, "latencies_ms": [], "dns_lookups": 0}
     attempts: list[dict[str, Any]] = []
-    proof_profile = {"organisation_number": profile.get("organisation_number"), "name": name, "registry": registry_contact(profile)}
+    proof_profile = {"organisation_number": profile.get("organisation_number"), "name": name, "registry": registry_contact(profile),
+                     "legal_form": profile.get("legal_form")}
     fetches = 0
     generated_fetches = 0
     gate = secondary_pages_for(profile) if homepage_first else None
@@ -281,7 +282,7 @@ def _get_feed(url: str, max_bytes: int = 1_000_000, timeout: float = 10.0) -> tu
         return response.read(max_bytes), response.geturl()
 
 
-def attach_feed_activity(site: dict[str, Any], *, name: Any = None, now: str | None = None, timeout: float = 10.0) -> int:
+def attach_feed_activity(site: dict[str, Any], *, name: Any = None, in_group: bool = False, now: str | None = None, timeout: float = 10.0) -> int:
     """For a website record that passed the identity gate and declares its own posts feed, read that feed once and
     keep its dated posts under value.feed_activity. Returns the number of feed fetches attempted (0 or 1).
     robots.txt is honoured (normally already cached from the homepage fetch). Errors are recorded, never raised."""
@@ -291,7 +292,7 @@ def attach_feed_activity(site: dict[str, Any], *, name: Any = None, now: str | N
     url = value.get("feed_link")
     if not url or value.get("feed_activity"):
         return 0
-    if not activity_allowed(value, name):
+    if not activity_allowed(value, name, in_group=in_group):
         return 0  # a registry-declared group/brand site: its news is the group's, so the request is not spent
     record: dict[str, Any] = {"feed_url": url, "items": [], "retrieved_at": utc_now()}
     try:
@@ -390,6 +391,10 @@ def nav_jobs_for_batch(orgs: dict[str, dict[str, Any]], *, days: int = 60, max_d
     except Exception as exc:  # feed failure must not drop envelopes
         err = f"{type(exc).__name__}: {str(exc)[:160]}"
         return {org: evidence("jobs", "source_error", "nav_public_vacancy_feed", f"{NAV_FEED}/api/v1/feed", note=err) for org in orgs}, {"requests": 1, "error": err}
+    if metrics.get("truncated"):
+        # A partial feed cannot show that a company has no vacancy: report the module as failed, never as "none found".
+        err = f"NAV feed walk incomplete ({metrics['truncated']}); hiring not determined"
+        return {org: evidence("jobs", "source_error", "nav_public_vacancy_feed", f"{NAV_FEED}/api/v1/feed", note=err) for org in orgs}, metrics
     keys: dict[str, set[str]] = {}
     for org, info in orgs.items():
         for name in [info.get("name"), *(info.get("subunit_names") or [])]:
@@ -443,7 +448,8 @@ def nav_jobs_for_batch(orgs: dict[str, dict[str, Any]], *, days: int = 60, max_d
             out[org] = evidence("jobs", "not_found", "nav_public_vacancy_feed", f"{NAV_FEED}/api/v1/feed",
                                 value={"items": [], "count": 0, "window_days": days, "feed_sha256": metrics.get("feed_sha256")},
                                 retrieved_at=retrieved_at,
-                                note=f"No ACTIVE NAV vacancy with this employer org number (or its subunits) in the last {days} days of the feed")
+                                note=f"No ACTIVE NAV vacancy in the last {days} days of the feed whose employer name matches this entity's legal or "
+                                     "workplace names and whose employer org number is this entity or one of its workplaces")
     return out, metrics
 
 

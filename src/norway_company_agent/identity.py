@@ -153,7 +153,11 @@ def assess_social_identity(profile: dict[str, Any], link: dict[str, str]) -> dic
     matched = [token for token in core if token in handle_compact]
     core_compact = "".join(core)
     ratio = len(set(matched)) / len(set(core)) if core else 0.0
-    if core_compact and core_compact in handle_compact:
+    group_words = ("gruppen", "group", "konsern", "holding", "norden", "nordic", "international")
+    if any(word in handle_compact and word not in core_compact for word in group_words):
+        score = 0.3
+        reason = "handle carries a group/brand qualifier the legal name lacks (likely the group's profile)"
+    elif core_compact and core_compact in handle_compact:
         score = 0.98
         reason = "normalized legal-name sequence appears in the social handle"
     elif len(core) == 1 and matched and len(core[0]) >= 4:

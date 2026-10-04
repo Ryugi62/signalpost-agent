@@ -33,7 +33,7 @@ def fetch_json(url: str, *, timeout: float = 20.0, attempts: int = 3) -> FetchRe
         started = time.monotonic()
         request = urllib.request.Request(
             url,
-            headers={"Accept": "application/json", "User-Agent": "builderr-signalpost-poc/0.1 (+https://builderr.ai)"},
+            headers={"Accept": "application/json", "User-Agent": "signalpost-exact-id-agent/2.0 (+https://github.com/Ryugi62/signalpost-agent)"},
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:

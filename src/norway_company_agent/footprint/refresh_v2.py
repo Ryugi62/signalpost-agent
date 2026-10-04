@@ -37,6 +37,31 @@ def material_changes(previous: dict[str, Any] | None, current: dict[str, Any], *
                         "source_url": new_site.get("source_url") or old_site.get("source_url"), "retrieved_at": new_site.get("retrieved_at")})
     elif old_site.get("value") != new_site.get("value"):
         not_compared.append("external.official_website")
+    for family in ("dated_activity", "contact_email", "self_description", "social_profiles"):
+        def values(profile: dict[str, Any]) -> tuple[set[str], set[str]]:
+            claims = [c for c in profile.get("external_claims") or [] if c.get("field") == family]
+            states = {str(c.get("availability")) for c in claims}
+            found = {str(c.get("value") if not isinstance(c.get("value"), dict) else (c["value"].get("date"), c["value"].get("title")))
+                     for c in claims if c.get("availability") == "available"}
+            return states, found
+        old_states, old_values = values(previous)
+        new_states, new_values = values(current)
+        if not (old_states | new_states) or old_values == new_values:
+            continue
+        if (old_states | new_states) <= {"available", "not_available"}:
+            changes.append({"organisation_number": current.get("organisation_number"), "field": f"external.{family}",
+                            "old_value": sorted(old_values), "new_value": sorted(new_values),
+                            "source_url": _claim(current, family).get("source_url"), "retrieved_at": _claim(current, family).get("retrieved_at")})
+        else:
+            not_compared.append(f"external.{family}")
+    live_old = ((previous.get("evidence") or {}).get("registry_live") or {})
+    live_new = ((current.get("evidence") or {}).get("registry_live") or {})
+    if live_old.get("status") == "available" and live_new.get("status") == "available":
+        for key in sorted(set((live_old.get("value") or {})) | set((live_new.get("value") or {}))):
+            a, b = (live_old.get("value") or {}).get(key), (live_new.get("value") or {}).get(key)
+            if a != b:
+                changes.append({"organisation_number": current.get("organisation_number"), "field": f"registry_live.{key}", "old_value": a, "new_value": b,
+                                "source_url": live_new.get("source_url"), "retrieved_at": live_new.get("retrieved_at")})
     old_jobs = {(c.get("source_url")) for c in previous.get("external_claims") or [] if c.get("field") == "job_postings" and c.get("availability") == "available"}
     new_jobs = {(c.get("source_url")) for c in current.get("external_claims") or [] if c.get("field") == "job_postings" and c.get("availability") == "available"}
     if old_jobs != new_jobs and {_claim(previous, "job_postings").get("availability"), _claim(current, "job_postings").get("availability")} <= {"available", "not_available"}:

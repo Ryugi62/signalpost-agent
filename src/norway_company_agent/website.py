@@ -58,6 +58,11 @@ def assert_public_url(url: str) -> None:
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
         assert_public_url(newurl)
+        old_host = urllib.parse.urlparse(req.full_url).netloc.casefold()
+        new = urllib.parse.urlparse(newurl)
+        if new.netloc.casefold() != old_host and new.path != "/robots.txt" and not _robots_allowed(newurl, 10.0):
+            # another host: its own robots.txt decides (RFC 9309 applies per host)
+            raise urllib.error.HTTPError(newurl, 403, "robots.txt of the redirect target disallows this user agent", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 

@@ -67,3 +67,13 @@ def test_runner_second_run_compares_and_preserves_previous(tmp_path, monkeypatch
     assert second["refresh"]["compared"] is True and second["refresh"]["previous_run_id"] == "r1" and second["refresh"]["changes"] == []
     archived = tmp_path / "p.before-r1.jsonl"
     assert archived.exists() and json.loads(archived.read_text().splitlines()[0])["run_id"] == "r1"
+
+
+def test_external_family_changes_and_unread_families():
+    old = _p(); new = _p()
+    old["external_claims"].append({"field": "dated_activity", "availability": "available", "value": {"date": "2026-01-01", "title": "A"}})
+    new["external_claims"].append({"field": "dated_activity", "availability": "available", "value": {"date": "2026-02-01", "title": "B"}})
+    assert "external.dated_activity" in {c["field"] for c in material_changes(old, new)["changes"]}
+    blocked = _p(); blocked["external_claims"].append({"field": "dated_activity", "availability": "blocked", "value": None})
+    out = material_changes(old, blocked)
+    assert "external.dated_activity" in out["not_compared"] and not any(c["field"] == "external.dated_activity" for c in out["changes"])

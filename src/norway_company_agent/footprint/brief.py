@@ -115,14 +115,17 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
     chair = next((r for r in active if r.get("role_code") == "LEDE"), None)
 
     def since(role: dict[str, Any]) -> str:
-        return f" (registered {str(role.get('last_changed'))[:10]})" if role.get("last_changed") else ""
+        return f" (role record last changed {str(role.get('last_changed'))[:10]})" if role.get("last_changed") else ""
 
     if ceo or chair:
         bits = []
-        if ceo:
-            bits.append(f"managing director {ceo.get('name')}{since(ceo)}")
-        if chair:
-            bits.append(f"board chair {chair.get('name')}{since(chair)}")
+        if ceo and chair and ceo.get("name") == chair.get("name"):
+            bits.append(f"managing director and board chair {ceo.get('name')}{since(chair)}")
+        else:
+            if ceo:
+                bits.append(f"managing director {ceo.get('name')}{since(ceo)}")
+            if chair:
+                bits.append(f"board chair {chair.get('name')}{since(chair)}")
         members = sum(1 for r in active if r.get("role_code") == "MEDL")
         tail = f"; {members} other board member{'s' if members != 1 else ''}" if members else ""
         add("Official roles: " + " and ".join(bits) + tail + ".", roles_rec, verify=registry_page)

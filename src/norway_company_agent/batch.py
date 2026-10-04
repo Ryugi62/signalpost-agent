@@ -61,6 +61,8 @@ def profiles_from_bulk(path: str | Path, organisation_numbers: Iterable[str]) ->
     wanted = set(requested)
     snapshot_sha256 = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     retrieved_at = utc_now()
+    from datetime import datetime, timezone
+    snapshot_as_of = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc).isoformat()  # when the frozen file was written
     found: dict[str, dict[str, Any]] = {}
     scanned = 0
     for profile in iter_bulk(path):
@@ -77,8 +79,11 @@ def profiles_from_bulk(path: str | Path, organisation_numbers: Iterable[str]) ->
                 "https://data.brreg.no/enhetsregisteret/api/enheter/lastned/csv",
                 value=raw,
                 retrieved_at=retrieved_at,
+                as_of=snapshot_as_of,
                 content_sha256=snapshot_sha256,
                 source_row_key=org,
+                note="Row of the frozen Brønnøysund bulk snapshot supplied to this run (as_of = snapshot file time, content_sha256 = snapshot hash); "
+                     "retrieved_at = when this run read it",
             ),
             "accounting_obligation": accounting_obligation_assessment(profile),
         }
@@ -105,6 +110,7 @@ def profiles_from_bulk(path: str | Path, organisation_numbers: Iterable[str]) ->
         }
     return [found[org] for org in requested], {
         "registry_snapshot_sha256": snapshot_sha256,
+        "registry_snapshot_as_of": snapshot_as_of,
         "registry_rows_scanned": scanned,
         "requested": len(requested),
         "selected": len(found) - len(missing),

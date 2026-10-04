@@ -46,8 +46,8 @@ def test_roles_with_dates_and_auditor():
         {"name": "A", "role_code": "MEDL", "inactive": False}, {"name": "B", "role_code": "MEDL", "inactive": False},
         {"name": "REVISJON AS", "organisation_number": "999999999", "role_code": "REVI", "inactive": False}]}}
     texts = _texts(_profile(roles=roles))
-    assert "managing director Rasmus Haugland (registered 2011-10-15)" in texts
-    assert "board chair Endre Haugland (registered 2022-01-19)" in texts
+    assert "managing director Rasmus Haugland (role record last changed 2011-10-15)" in texts
+    assert "board chair Endre Haugland (role record last changed 2022-01-19)" in texts
     assert "2 other board members" in texts
     assert "Auditor: REVISJON AS (999999999)." in texts
 
@@ -97,3 +97,18 @@ def test_refresh_sentence_and_unread_jobs():
     assert "Since the previous run (r1): 1 material change — registry.employees: 3 → 5." in texts
     notes = {u["topic"]: u["note"] for u in brief["unknowns"]}
     assert "not read in this run (failed)" in notes["hiring"] and "financials.records" in notes["refresh"]
+
+
+def test_auditor_name_from_bulk_list_and_merged_roles():
+    from norway_company_agent.official import normalize_roles
+    body = {"rollegrupper": [{"type": {"kode": "REVI"}, "sistEndret": "2020-01-01", "roller": [
+        {"type": {"kode": "REVI", "beskrivelse": "Revisor"}, "enhet": {"organisasjonsnummer": "999999999", "navn": ["CEDRA NORGE AS"]}}]}]}
+    roles = normalize_roles(body)["roles"]
+    assert roles[0]["name"] == "CEDRA NORGE AS"
+    both = {"status": "available", "source_url": "bulk", "value": {"roles": [
+        {"name": "Kari", "role_code": "DAGL", "last_changed": "2022-07-29", "inactive": False},
+        {"name": "Kari", "role_code": "LEDE", "last_changed": "2022-07-29", "inactive": False},
+        {"name": "CEDRA NORGE AS", "organisation_number": "999999999", "role_code": "REVI", "inactive": False}]}}
+    texts = _texts(_profile(roles=both))
+    assert "managing director and board chair Kari (role record last changed 2022-07-29)" in texts
+    assert "Auditor: CEDRA NORGE AS (999999999)." in texts and "['" not in texts

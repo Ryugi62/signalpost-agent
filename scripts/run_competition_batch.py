@@ -20,6 +20,7 @@ from norway_company_agent.footprint.domain import flatten_external_claims  # noq
 from norway_company_agent.footprint.io import attach_feed_activity, discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
 from norway_company_agent.footprint.domain import FREE_MAIL  # noqa: E402
 from norway_company_agent.footprint.refresh_v2 import material_changes  # noqa: E402
+from norway_company_agent.footprint.redact import redact_for_output  # noqa: E402
 from norway_company_agent.budget import DEFAULT_LIMIT, REGISTRY_CATEGORIES, RequestBudget, plan_shares, registry_reserve  # noqa: E402
 from norway_company_agent.http_gate import charging, install_request_gate  # noqa: E402
 from norway_company_agent.http import fetch_json  # noqa: E402
@@ -155,12 +156,16 @@ def main() -> None:
     budget.set_ceiling("website_registry", plan["ceilings"]["website_registry"])
     budget.set_ceiling("activity_feed", plan["ceilings"]["activity_feed"])
 
-    def read_feed(site: dict, name=None) -> None:
+    def read_feed(site: dict, profile: dict) -> None:
         """AC-23: one feed read for a site that passed the identity gate and declares its own posts feed."""
         value = site.get("value") if isinstance(site.get("value"), dict) else {}
-        if value.get("feed_link") and not over_deadline() and budget.available("activity_feed") > 0:
-            with charging("activity_feed"):
-                attach_feed_activity(site, name=name)
+        if not value.get("feed_link") or not (value.get("identity_assessment") or {}).get("publishable"):
+            return
+        if over_deadline() or budget.available("activity_feed") <= 0:
+            value["feed_activity"] = {"feed_url": value.get("feed_link"), "items": [], "skipped": "request budget or run deadline (policy)"}
+            return
+        with charging("activity_feed"):
+            attach_feed_activity(site, name=profile.get("name"), in_group=in_group(profile))
     budget.set_ceiling("website_discovery", 0)  # opened after the registry-website phase with whatever is left
     budget.set_ceiling("financials", plan["wanted"]["financials"])
     budget.set_ceiling("group", plan["wanted"]["group"])
@@ -179,7 +184,7 @@ def main() -> None:
                     website_record, website_metrics = fetch_website(profile.get("website"), max_secondary=args.registry_secondary_pages)
                 profile["evidence"]["website"] = apply_website_identity_gate(profile, website_record)["website"]
                 latencies += website_metrics["latencies_ms"]
-                read_feed(profile["evidence"]["website"], profile.get("name"))
+                read_feed(profile["evidence"]["website"], profile)
         return {"latencies_ms": latencies}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -240,7 +245,7 @@ def main() -> None:
             if site.get("status") == "available" and found.get("source_class") != "registry_linked_company_website":
                 profile["evidence"]["website_registry_unverified"] = site
             profile["evidence"]["website"] = found
-            read_feed(found, profile.get("name"))
+            read_feed(found, profile)
         return metrics
 
     # Discovery in two passes around the per-company registry reads (marginal value per request, measured on a
@@ -344,6 +349,7 @@ def main() -> None:
         except Exception as exc:  # never lose the batch over one profile
             profile["external_claims"] = [{"field": "official_website", "value": None, "availability": "failed", "note": f"{type(exc).__name__}: {str(exc)[:120]}"},
                                           {"field": "job_postings", "value": None, "availability": "failed"}]
+        redact_for_output(profile)  # page text is never published (claims and proof snippets are already extracted)
         profile["run_id"] = args.run_id
         prior = previous_by_org.get(profile["organisation_number"])
         try:

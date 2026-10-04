@@ -51,7 +51,7 @@ def brave_search(profile: dict, api_key: str, *, timeout: float, count: int) -> 
         "Accept": "application/json",
         "Accept-Encoding": "identity",
         "Cache-Control": "no-cache",
-        "User-Agent": "builderr-signalpost-poc/0.1 (+https://builderr.ai)",
+        "User-Agent": "signalpost-exact-id-agent/2.0 (+https://github.com/Ryugi62/signalpost-agent)",
         "X-Subscription-Token": api_key,
     })
     started = time.monotonic()
