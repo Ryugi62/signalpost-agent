@@ -110,7 +110,7 @@ def test_ac23_feed_failure_is_recorded_not_raised(monkeypatch):
 
 def test_ac24_registry_reads_reserved_before_discovery():
     from norway_company_agent.budget import plan_shares, registry_reserve
-    assert registry_reserve(1000, group_candidates=43) == 1000 + 20 + 43
+    assert registry_reserve(1000, group_candidates=43) == 1000 + 40 + 43
     for n in (100, 1000, 1100):
         plan = plan_shares(1950, n, registry_sites=110, group_candidates=int(n * 0.05), financials_floor=registry_reserve(n, group_candidates=int(n * 0.05)))
         assert plan["ceilings"]["financials"] >= n

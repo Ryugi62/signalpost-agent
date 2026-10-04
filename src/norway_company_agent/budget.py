@@ -132,7 +132,7 @@ def plan_shares(limit: int, n_companies: int, *, registry_sites: int = 0, group_
         "website_registry": pages_per_registry_site * max(0, int(registry_sites)),
         "activity_feed": max(0, int(registry_sites)) + math.ceil(n / 20),  # one feed read per verified site (registry or discovered)
         "website_discovery": None,  # remainder minus the floor kept for annual accounts
-        "financials": n + math.ceil(n / 50),
+        "financials": n + math.ceil(n / 25),
         "group": max(0, int(group_candidates)),
     }
     left = int(limit)
@@ -150,6 +150,7 @@ def plan_shares(limit: int, n_companies: int, *, registry_sites: int = 0, group_
 
 def registry_reserve(n_companies: int, *, group_candidates: int = 0) -> int:
     """Requests kept back from discovery for the per-company registry reads: one annual-accounts request per company,
-    a 2% retry margin, and the group structure for entities the registry marks as part of a group (AC-24)."""
+    a 4% retry margin (Regnskapsregisteret answers some calls with 5xx/429; a clean-container run used 2.0% on retries),
+    and the group structure for entities the registry marks as part of a group (AC-24)."""
     n = max(0, int(n_companies))
-    return n + math.ceil(n / 50) + max(0, int(group_candidates))
+    return n + math.ceil(n / 25) + max(0, int(group_candidates))

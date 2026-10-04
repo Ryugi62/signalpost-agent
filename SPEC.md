@@ -27,7 +27,7 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - **wikidata bridge**: a Wikidata item whose P2333 equals the org. It yields its website (P856) and social IDs.
 - **request budget**: the run-wide ceiling on outbound HTTP requests, with a ceiling per category in priority order (registry batch, registry bulk, Wikidata, NAV, registry-declared websites, annual accounts, group structure, discovery).
 - **feed activity**: dated posts from the RSS/Atom feed that a verified company site declares in its own `<link rel="alternate">`; they are `dated_activity` claims.
-- **registry reserve**: the requests kept back for one annual-accounts read per company (+2%) and the group structure of `erIKonsern` entities before any website work.
+- **registry reserve**: the requests kept back for one annual-accounts read per company (+4% for retries) and the group structure of `erIKonsern` entities before any website work.
 - **request gate**: the infrastructure hook that asks the request budget before every HTTP request and refuses it unsent when the budget says no.
 - **registry-declared domain**: a domain the registry ties to the entity (its website field, its e-mail address, a subunit's website or e-mail) or that Wikidata's P856 gives. It is a candidate; publishing needs the org number unless the domain spells the full legal name (then a registry-unique contact proof also counts).
 
@@ -68,6 +68,10 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - AC-23 The feed is read only for a site that passed the identity gate (on `.no`, or with an org-number proof, so a parent group's `.com` news is never attributed to the subsidiary) and declares an RSS/Atom feed on its own domain (no comments feed, no oEmbed): one request, charged to `activity_feed`; a failure is recorded, never raised.
 - AC-24 Under the strict scope, the registry reserve is set aside before any website work, so the plan gives annual accounts at least one request per company for 100, 1,000 and 1,100 companies.
 - AC-25 Social profiles the site declares in its own JSON-LD (`Organization.sameAs`) join the footer/link candidates, and the same social-handle identity gate decides publication (no extra request).
+- AC-26 Refresh: a run compares each profile with the previous run of the same command (`--previous`, default the existing `--profiles-output`, archived as `<name>.before-<run_id>.jsonl` before it is replaced) and records `profile.refresh` = {compared, previous_run_id, changes, not_compared}. A field read in only one of the two runs (blocked/failed) is listed in `not_compared`, never reported as a change; an identical re-run reports no change.
+- AC-27 Every envelope carries a state for every external family (official_website, social_profiles, dated_activity, contact_email, self_description, job_postings). A company not checked because of the request budget or the run deadline is `blocked` with a policy note, never `not_available` or `failed`.
+- AC-28 Dated activity (page markup or feed) is attributed only from a site with an org-number or registry-unique contact proof, or a `.no` domain spelled like the full legal name; items named after the company or hosted on another domain are dropped.
+- AC-29 The registry-website gate gives an org-number match only when it is the sole org number in the homepage identity text; every published website claim carries a reviewer-checkable proof snippet (e-mails masked).
 
 ## 7. Layers
 `src/norway_company_agent/footprint/` holds pure functions (candidates, proof, matching, parsing), which are domain logic with no I/O. The I/O adapters (DNS/HTTP/NAV/Wikidata) sit in the same package's `*_io.py`. The runner script is the infrastructure.
