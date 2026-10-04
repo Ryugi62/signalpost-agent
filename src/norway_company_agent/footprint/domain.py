@@ -304,7 +304,7 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
     verified_site = next((c["value"] for c in claims if c["field"] == "official_website" and c["availability"] == "available"), None)
     wd_site = next((c["value"] for c in wd_claims if c["field"] == "official_website"), None)
     corroborated = bool(verified_site and wd_site and _reg_domain(verified_site) == _reg_domain(wd_site))
-    have = {(c["field"], c.get("value")) for c in claims}
+    have = {(c["field"], c.get("value")) for c in claims if isinstance(c.get("value"), str)}
     for claim in wd_claims:
         if claim["field"] == "official_website" or (claim["field"], claim["value"]) in have:
             continue

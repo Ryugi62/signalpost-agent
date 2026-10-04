@@ -221,3 +221,10 @@ def test_financial_records_latest_first():
     from norway_company_agent.official import normalize_financials
     body = [{"regnskapsperiode": {"tilDato": "2023-12-31"}}, {"regnskapsperiode": {"tilDato": "2025-12-31"}}]
     assert normalize_financials(body)["records"][0]["period"]["tilDato"] == "2025-12-31"
+
+
+def test_flatten_with_jobs_and_wikidata_does_not_crash():
+    jobs = {"status": "available", "retrieved_at": "t", "value": {"items": [{"title": "T", "url": "u", "published": "2026-10-01"}]}}
+    wd = {"status": "available", "value": {"claims": [{"field": "facebook", "value": "https://www.facebook.com/x", "source_url": "w"}]}}
+    claims = flatten_external_claims({"evidence": {"jobs": jobs, "wikidata": wd}})
+    assert any(c["field"] == "job_postings" and c["availability"] == "available" for c in claims)

@@ -185,8 +185,15 @@ def main() -> None:
         operations["by_module"]["jobs"] = jobs_metrics.get("requests", 0)
         batch_reports["jobs"] = jobs_metrics
     for profile in ordered_profiles:
-        profile["external_claims"] = flatten_external_claims(profile)
-        profile["company_brief"] = company_brief(profile)
+        try:
+            profile["external_claims"] = flatten_external_claims(profile)
+        except Exception as exc:  # never lose the batch over one profile
+            profile["external_claims"] = [{"field": "official_website", "value": None, "availability": "failed", "note": f"{type(exc).__name__}: {str(exc)[:120]}"},
+                                          {"field": "job_postings", "value": None, "availability": "failed"}]
+        try:
+            profile["company_brief"] = company_brief(profile)
+        except Exception as exc:
+            profile["company_brief"] = {"sentences": [], "unknowns": [{"topic": "brief", "note": f"failed: {type(exc).__name__}"}], "llm": False}
     completed_at = utc_now()
     envelopes = [
         terminal_envelope(profile, run_id=args.run_id, modules=requested_modules, started_at=started_at, completed_at=completed_at)
