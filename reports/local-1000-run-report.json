@@ -1,7 +1,7 @@
 {
-  "run_id": "fresh5-rc5",
-  "started_at": "2026-10-04T08:55:02.107096Z",
-  "completed_at": "2026-10-04T09:02:26.303789Z",
+  "run_id": "linux-rc7-fresh8-1000",
+  "started_at": "2026-10-04T09:26:54.220400Z",
+  "completed_at": "2026-10-04T09:36:33.846524Z",
   "expected_count": 1000,
   "emitted_envelopes": 1000,
   "resumed_profiles": 0,
@@ -21,25 +21,23 @@
   ],
   "registry": {
     "registry_snapshot_sha256": "ec76476654c2e21a78d6434b32e30fb139d0360f1694fbc2d4fd75bf88b9eeba",
-    "registry_rows_scanned": 1176493,
+    "registry_rows_scanned": 1176237,
     "requested": 1000,
-    "selected": 999,
-    "absent_from_snapshot": [
-      "993012505"
-    ]
+    "selected": 1000,
+    "absent_from_snapshot": []
   },
   "operations": {
-    "requests": 7231,
-    "bytes": 172010130,
-    "dns_lookups": 2111,
+    "requests": 7301,
+    "bytes": 139537496,
+    "dns_lookups": 1894,
     "by_module": {
-      "website_discovery": 1682,
-      "website_registry": 401,
+      "website_discovery": 1753,
+      "website_registry": 400,
       "wikidata": 3,
       "jobs": 145
     },
-    "p50_ms": 1269,
-    "p95_ms": 1948
+    "p50_ms": 1274,
+    "p95_ms": 2095
   },
   "validation": {
     "passed": true,
@@ -55,28 +53,30 @@
   "batch_modules": {
     "wikidata": {
       "requests": 3,
-      "bytes": 6313,
-      "orgs_with_claims": 13
+      "bytes": 2884,
+      "orgs_with_claims": 5
     },
     "jobs": {
       "requests": 145,
-      "bytes": 67730149,
+      "bytes": 67698338,
       "pages": 139,
-      "feed_sha256": "781f272f3c681edbe32f56e1d077cab02a108083224a0435f69876ae071f9934",
-      "active_entries": 9464,
+      "feed_sha256": "459c0be25c48716381335e1b2480722173c26332aa2e462d7840575cd57da34e",
+      "active_entries": 9463,
       "name_candidates": 4,
       "details_fetched": 4,
-      "orgs_with_jobs": 4
+      "orgs_with_jobs": 3
     }
   },
   "third_party_cost_usd": 0,
   "contact_proofs_enabled": true,
   "external_coverage": {
-    "published_websites": 94,
-    "discovered_websites": 50,
-    "orgs_with_social": 45,
-    "orgs_with_jobs": 4,
-    "orgs_with_dated_activity": 6,
-    "orgs_with_wikidata": 13
+    "published_websites": 74,
+    "discovered_websites": 35,
+    "orgs_with_social": 28,
+    "orgs_with_jobs": 3,
+    "orgs_with_contact_email": 39,
+    "orgs_with_self_description": 41,
+    "orgs_with_dated_activity": 3,
+    "orgs_with_wikidata": 5
   }
 }

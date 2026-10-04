@@ -33,7 +33,10 @@ The resulting rules are:
 |---|---:|---:|---:|---:|---:|---:|
 | seed 20261008 / v1-rc2 | 38 | 25 | 5 | 4 | 4 | **1** |
 | seed 20261009 / v1-rc3 | 51 | 39 | 7 | 5 | 0 (path removed) | **0** |
-| seed 20261010 / final v1 | 50 | 41 | 5 | 4 | 0 | **0** |
+| seed 20261010 / v1-rc5 | 50 | 41 | 5 | 4 | 0 | **0** |
+| seed 20261011 / v1-rc5 (container) | 34 | 27 | 7 (phone + address) | — | 0 | **0** |
+| seed 20261012 / v1-rc6 (container) | 38 | 22 | 16 (phone + address) | — | 0 | **0 wrong, 1 questionable**: CONFECTA AS → confecta.com, the brand's international site, proven by a unique phone → v1-rc7: `.com` needs the org number |
+| seed 20261013 / **final v1** (container) | 35 | 22 | 13 (phone + address) | — | 0 | **0** |
 
 The one wrong case was **CARLBERGVEIEN 7 AS → personalpartner.no**. A holding company named after its street address had registered its owner's e-mail domain, and that owner's homepage shows the address. Fix in v1-rc3: the registry e-mail domain is now only a candidate source. Publishing still needs an org proof or a registry-unique contact proof, and the shared address fails uniqueness.
 
@@ -42,6 +45,6 @@ The one wrong case was **CARLBERGVEIEN 7 AS → personalpartner.no**. A holding 
 
 **Result (earlier rules).** 0 wrong-entity publications among 122 audited discoveries. The 95% upper bound on the error rate is about 2.5% (rule of three). Under the current rules the 2 questionable cases are rejected as well.
 
-**Final rules (v1):** 0 wrong among the 50 discoveries of a batch never seen before (seed 20261010). The frozen-code audits of seeds 20261009 and 20261010 together come to 0 wrong in 101. The rule-of-three 95% upper bound is about 3%. The audit was done by the author, reading the URL and the proof span. It was not an independent second reviewer.
+**Final rules (v1):** 0 wrong among the 35 discoveries of a batch never seen before (seed 20261013). Across the last five frozen audits (seeds 20261009–20261013, 208 discoveries) there were 0 wrong entities and 1 questionable brand site, which the final rule rejects. The audit was done by the author, reading the URL and the proof span. It was not an independent second reviewer.
 
 **Privacy.** Snippets for org proofs keep only about 40 characters around the number, and e-mail addresses are masked. Contact proofs store only a short hash of the matched phone or address, never the value. Personal names and contact persons from company pages are not published.
