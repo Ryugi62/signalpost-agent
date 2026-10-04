@@ -1,7 +1,7 @@
 {
   "run_id": "smoke-100-v2-run1",
-  "started_at": "2026-10-04T14:04:46.843100Z",
-  "completed_at": "2026-10-04T14:10:10.762046Z",
+  "started_at": "2026-10-04T14:28:56.346210Z",
+  "completed_at": "2026-10-04T14:33:54.910768Z",
   "expected_count": 100,
   "emitted_envelopes": 100,
   "resumed_profiles": 0,
@@ -47,8 +47,8 @@
       "website_registry": 54,
       "wikidata": 1
     },
-    "p50_ms": 1238,
-    "p95_ms": 2989
+    "p50_ms": 1233,
+    "p95_ms": 3107
   },
   "validation": {
     "passed": true,
@@ -84,10 +84,10 @@
     },
     "jobs": {
       "requests": 97,
-      "bytes": 45161717,
+      "bytes": 45149061,
       "pages": 93,
-      "feed_sha256": "a3866d0c27ea2b5ec50956a9a005c558c022ac6f21aa60b38d28149e8c1366ac",
-      "active_entries": 9196,
+      "feed_sha256": "733d5c4b320c1a0089fd1e36ec41a2738a0d88b2e1e5bf73e61cc4704a65947d",
+      "active_entries": 9195,
       "name_candidates": 2,
       "details_fetched": 2,
       "orgs_with_jobs": 2
@@ -162,9 +162,9 @@
         "group": 6
       }
     },
-    "discovery_phase_started_with": 1814,
-    "after_high_yield_discovery": 1763,
-    "after_low_yield_discovery": 1562,
+    "discovery_phase_started_with": 1816,
+    "after_high_yield_discovery": 1765,
+    "after_low_yield_discovery": 1565,
     "high_yield_companies": 24,
     "low_yield_companies": 76
   },
