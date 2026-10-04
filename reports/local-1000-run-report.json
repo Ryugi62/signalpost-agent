@@ -1,7 +1,7 @@
 {
-  "run_id": "linux-v2rc4-fresh8-1000",
-  "started_at": "2026-10-04T13:40:25.994050Z",
-  "completed_at": "2026-10-04T13:45:57.875814Z",
+  "run_id": "linux-v2-final-fresh8-1000",
+  "started_at": "2026-10-04T13:59:29.953072Z",
+  "completed_at": "2026-10-04T14:04:46.102457Z",
   "expected_count": 1000,
   "emitted_envelopes": 1000,
   "resumed_profiles": 0,
@@ -34,21 +34,21 @@
     "absent_from_snapshot": []
   },
   "operations": {
-    "dns_lookups": 708,
+    "dns_lookups": 725,
     "requests": 1943,
     "by_module": {
-      "activity_feed": 12,
-      "financials": 1035,
+      "activity_feed": 13,
+      "financials": 1029,
       "group": 63,
       "jobs": 99,
       "registry_batch": 4,
       "registry_bulk": 2,
-      "website_discovery": 287,
+      "website_discovery": 292,
       "website_registry": 438,
       "wikidata": 3
     },
-    "p50_ms": 1243,
-    "p95_ms": 2657
+    "p50_ms": 1239,
+    "p95_ms": 2659
   },
   "validation": {
     "passed": true,
@@ -84,9 +84,9 @@
     },
     "jobs": {
       "requests": 99,
-      "bytes": 45179039,
+      "bytes": 45163267,
       "pages": 93,
-      "feed_sha256": "09de207f1828b906843afa26385f2e3acdbd907065ac8532bbf05a14c2ed8313",
+      "feed_sha256": "f925170531fcecfa6086334513aee71593d50bbfe1bb8aa975d12ed76f0f6790",
       "active_entries": 9196,
       "name_candidates": 4,
       "details_fetched": 4,
@@ -101,21 +101,20 @@
     "exempt": [],
     "total_outbound": 1943,
     "remaining": 7,
-    "denied": 19,
+    "denied": 20,
     "by_category": {
-      "activity_feed": 12,
-      "financials": 1035,
+      "activity_feed": 13,
+      "financials": 1029,
       "group": 63,
       "jobs": 99,
       "registry_batch": 4,
       "registry_bulk": 2,
-      "website_discovery": 287,
+      "website_discovery": 292,
       "website_registry": 438,
       "wikidata": 3
     },
     "denied_by_category": {
-      "group": 2,
-      "website_discovery": 17
+      "website_discovery": 20
     },
     "reserved": {
       "jobs": 7
@@ -165,7 +164,7 @@
         "group": 63
       }
     },
-    "discovery_phase_started_with": 1414,
+    "discovery_phase_started_with": 1418,
     "after_high_yield_discovery": 1130,
     "after_low_yield_discovery": 12,
     "high_yield_companies": 273,
@@ -185,6 +184,6 @@
     "registry_sites_proven_by_discovery_gate": 0,
     "orgs_with_financials": 998,
     "orgs_with_roles": 1000,
-    "orgs_with_group": 59
+    "orgs_with_group": 63
   }
 }
