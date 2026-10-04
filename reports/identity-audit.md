@@ -27,6 +27,17 @@ The resulting rules are:
 - **Contact proofs:** the phone or address must be held by exactly one entity in the bulk registry. This rejects shopping-centre addresses, accountants' phones and shared offices.
 - **Org proofs:** the page must show no other org number.
 
-**Result.** 0 wrong-entity publications among 122 audited discoveries. The 95% upper bound on the error rate is about 2.5% (rule of three). Under the current rules the 2 questionable cases are rejected as well.
+## Frozen-code audits (clean Linux container, new seeds)
 
-**Privacy.** Snippets for org proofs keep only about 40 characters around the number, and e-mail addresses are masked. Contact proofs store only the matched phone or address value. Personal names and contact persons from company pages are not published.
+| Batch / tag | Discovered and published | Org proof | Unique phone | Unique address | Registry e-mail + name gate | Wrong entity |
+|---|---:|---:|---:|---:|---:|---:|
+| seed 20261008 / v1-rc2 | 38 | 25 | 5 | 4 | 4 | **1** |
+| seed 20261009 / v1-rc3 | 51 | 39 | 7 | 5 | 0 (path removed) | **0** |
+
+The one wrong case was **CARLBERGVEIEN 7 AS → personalpartner.no**. A holding company named after its street address had registered its owner's e-mail domain, and that owner's homepage shows the address. Fix in v1-rc3: the registry e-mail domain is now only a candidate source. Publishing still needs an org proof or a registry-unique contact proof, and the shared address fails uniqueness.
+
+**Result (earlier rules).** 0 wrong-entity publications among 122 audited discoveries. The 95% upper bound on the error rate is about 2.5% (rule of three). Under the current rules the 2 questionable cases are rejected as well.
+
+**Current rules (v1-rc3):** 0 wrong among 88 frozen-code discoveries (51 from seed 20261009 plus the 37 of seed 20261008 that do not use the removed path). The rule-of-three 95% upper bound is about 3.4%. The audit was done by the author, reading the URL and the proof span. It was not an independent second reviewer.
+
+**Privacy.** Snippets for org proofs keep only about 40 characters around the number, and e-mail addresses are masked. Contact proofs store only a short hash of the matched phone or address, never the value. Personal names and contact persons from company pages are not published.

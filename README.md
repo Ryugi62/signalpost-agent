@@ -10,7 +10,7 @@ Entry for the Builderr **Signalpost** challenge. It is built on the official Bui
 
 The starter's website identity gate now also reads footer and contact text, so a registry-listed site that prints its org number in the footer is no longer withheld. Organisation numbers missing from the bulk snapshot (deleted since) still get a terminal envelope instead of crashing the batch.
 
-**Identity audit.** On two fresh 1,000-company batches that were not used for tuning, every discovered site was checked against its stored proof snippet (`reports/identity-audit.md`). Each published claim carries `proof_snippet`, `identity_reason`, `source_url`, `retrieved_at` and `content_sha256`.
+**Identity audit** (`reports/identity-audit.md`): every discovered site in fresh 1,000-company batches run with frozen code in a clean container was checked. Under the current rules, 0 wrong entities among 88 discoveries. An owner-site case found in the v1-rc2 audit led to the removal of the e-mail-domain name shortcut. Each published claim carries `proof_snippet`, `identity_reason`, `source_url`, `retrieved_at` and `content_sha256`.
 
 ## Synthesis and UX
 
@@ -32,7 +32,8 @@ uv sync --frozen && uv run python scripts/run_competition_batch.py \
 - Models and APIs: **no LLM and no paid API.** Brønnøysund open data (NLOD 2.0), NAV public vacancy feed, Wikidata (CC0) and company-owned websites.
 - Secrets: none. Third-party cost per official run: **$0**.
 - Budget: the NAV feed is read once per batch (~140 pages for 75 days), in parallel with the per-company work. Wikidata is one SPARQL request per 400 companies. Domain discovery runs DNS first and fetches at most 3 candidate sites (≤3 pages each), and only for companies without a verified registry website. It is hard-capped by `--max-discovery-requests` (default 1,650). After `--deadline-minutes` (default 38), the remaining companies skip crawling but still return envelopes. Per-module request counts go into the run report. The registry modules are the starter's unchanged per-company calls. A local 1,000-company run takes about 8 minutes.
-- Smoke test: `reports/smoke-100/` (100 random companies from the public universe).
+- Smoke test: `reports/smoke-100/` (100 random companies from the public universe, plus a viewer build). A full fresh 1,000-company run in a clean Linux container: `reports/local-1000-run-report.json`.
+- Robustness: organisation numbers missing from the bulk snapshot still get envelopes. The unchanged starter raised an exception on 2 of 3 fresh random 1,000-company batches for this reason.
 
 ---
 

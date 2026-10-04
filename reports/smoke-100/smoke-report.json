@@ -1,7 +1,7 @@
 {
-  "run_id": "smoke-100-rc2",
-  "started_at": "2026-10-04T08:12:20.099089Z",
-  "completed_at": "2026-10-04T08:17:29.569389Z",
+  "run_id": "smoke-100-rc3",
+  "started_at": "2026-10-04T08:22:25.777198Z",
+  "completed_at": "2026-10-04T08:27:23.257018Z",
   "expected_count": 100,
   "emitted_envelopes": 100,
   "resumed_profiles": 0,
@@ -36,8 +36,8 @@
       "wikidata": 1,
       "jobs": 143
     },
-    "p50_ms": 1263,
-    "p95_ms": 1678
+    "p50_ms": 1265,
+    "p95_ms": 1724
   },
   "validation": {
     "passed": true,
@@ -58,9 +58,9 @@
     },
     "jobs": {
       "requests": 143,
-      "bytes": 67821556,
+      "bytes": 67816774,
       "pages": 139,
-      "feed_sha256": "d53edc3fee570750c1b7d33e86bf9af22a570cdd9fc06ec89201686f28ddbc7f",
+      "feed_sha256": "42788e1a48701f46bfb4cdce7458f2b07823d40e457854fd3a375ad3ca582903",
       "active_entries": 9462,
       "name_candidates": 2,
       "details_fetched": 2,
