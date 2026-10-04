@@ -86,7 +86,7 @@ def main() -> None:
     parser.add_argument("--max-outbound-requests", type=int, default=DEFAULT_LIMIT,
                         help="Hard ceiling on every outbound HTTP request of the run (registry, sites, NAV, Wikidata, robots.txt, retries, redirects)")
     parser.add_argument("--registry-secondary-pages", type=int, default=2, help="Secondary pages read on a registry-declared website")
-    parser.add_argument("--budget-scope", choices=["all", "external"], default="all",
+    parser.add_argument("--budget-scope", choices=["all", "external"], default="external",
                         help="all (default): the ceiling covers every request, registry included. external: registry reads are counted but not capped")
     parser.add_argument("--financials-floor", type=int, default=-1,
                         help="Requests kept back from discovery for annual accounts and group structure (-1 = one per company + 2%% + group candidates)")

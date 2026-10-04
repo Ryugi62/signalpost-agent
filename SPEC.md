@@ -9,7 +9,7 @@ Raise **external recall** (the only separating axis on the Builderr Signalpost b
 - S3: Published exact websites in the smoke run are at least **1.3×** the starter's (registry-only) count on the same batch.
 - S4: External requests (discovery + jobs + Wikidata) are **≤ 2 per company on average**, and the whole run takes **≤ 45 min per 1,000 companies** at the default workers.
 - S5: Third-party cost is **$0**, with no credential tied to the entrant's own account.
-- S6 (v2): **Every outbound HTTP request of a run is ≤ 1,950** (registry included, retries, robots.txt and redirect hops included), for 1,000 and 1,100 companies, enforced by a gate that refuses the request before it is sent. Interpretation note: the only published number is Unstop's "2,000 outbound requests"; Builderr's pages say "a fixed time and resource budget". v2 meets the strictest reading.
+- S6 (v2): **Every outbound HTTP request of a run is ≤ 1,950** (registry included, retries, robots.txt and redirect hops included), for 1,000 and 1,100 companies, enforced by a gate that refuses the request before it is sent. Interpretation note: the only published number is Unstop's "2,000 outbound requests"; Builderr's pages say "a fixed time and resource budget". v2 meets the strictest reading. **v2-external default:** registry reads are counted but not capped; every non-registry request is capped at 1,950 (`--budget-scope all` restores the strict cap).
 - S7 (v2): On the same fixed 1,000-company batch under the strict budget, companies with any external fact (website, social, jobs, dated activity) are not fewer than v1's (which used 7,301 requests), every company keeps its annual-accounts request, and never-seen batch audits (≥35 discoveries) have 0 wrong-entity publications.
 
 ## 2. Non-goals
