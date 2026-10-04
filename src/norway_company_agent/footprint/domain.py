@@ -273,19 +273,29 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
             "date_basis": "retrieved_at (live company page; no publication date)",
         })
         activity: dict[tuple[str, str], dict[str, Any]] = {}
-        for source in [value, *(value.get("pages") or [])]:
+        feed = value.get("feed_activity") or {}
+        feed_source = {"url": feed.get("feed_url"), "dated_activity": feed.get("items") or [], "retrieved_at": feed.get("retrieved_at"),
+                       "content_sha256": feed.get("content_sha256")}
+        for source in [value, *(value.get("pages") or []), feed_source]:
             for item in source.get("dated_activity") or []:
-                activity.setdefault((item.get("date"), str(item.get("title")).casefold()), {**item, "page": source.get("url") or value.get("final_url")})
+                activity.setdefault((item.get("date"), str(item.get("title")).casefold()),
+                                    {**item, "page": source.get("url") or value.get("final_url"),
+                                     "retrieved_at": source.get("retrieved_at") or site.get("retrieved_at"), "page_sha256": source.get("content_sha256")})
         for item in sorted(activity.values(), key=lambda x: x.get("date") or "", reverse=True)[:10]:
-            claims.append({
+            from_feed = item.get("method") == "rss"
+            claim = {
                 "field": "dated_activity", "value": {"title": item.get("title"), "date": item.get("date"), "type": item.get("type"), "url": item.get("url")},
                 "availability": "available", "source_url": item.get("page"), "source_class": "verified_company_site_dated_item",
-                "retrieved_at": site.get("retrieved_at"), "effective_at": item.get("date"), "method": f"company_site_{item.get('method')}",
-                "date_basis": "publication/start date stated on the company page",
-            })
+                "retrieved_at": item.get("retrieved_at"), "effective_at": item.get("date"), "method": f"company_site_{item.get('method')}",
+                "date_basis": ("publication date stated in the verified company site's own RSS/Atom feed" if from_feed
+                               else "publication/start date stated on the company page"),
+            }
+            if from_feed and item.get("page_sha256"):
+                claim["content_sha256"] = item["page_sha256"]
+            claims.append(claim)
         if not activity:
             claims.append({"field": "dated_activity", "value": None, "availability": "not_available", "source_url": value.get("final_url"),
-                           "retrieved_at": site.get("retrieved_at"), "note": "No dated article/event markup on the fetched pages of the verified site"})
+                           "retrieved_at": site.get("retrieved_at"), "note": "No dated article/event markup on the fetched pages of the verified site, and no dated post in its own feed"})
         description = str(value.get("description") or "").strip()
         if len(description) >= 30:
             claims.append({
@@ -355,3 +365,113 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
                        "corroboration": f"Wikidata P856 {wd_site} matches verified site" if corroborated else "not corroborated by a verified company site",
                        "date_basis": "retrieved_at of the Wikidata SPARQL response (CC0)"})
     return claims
+
+
+# --- Dated activity from the verified site's own RSS/Atom feed (AC-22, AC-23) ---------------------------
+
+FEED_TYPES = ("application/rss+xml", "application/atom+xml")
+PLACEHOLDER_TITLES = {
+    "hello world", "hei verden", "hallo verden", "sample page", "eksempelside", "om oss", "about", "about us", "kontakt",
+    "kontakt oss", "contact", "contact us", "home", "hjem", "forside", "uncategorized", "ukategorisert", "test", "personvern",
+    "privacy policy", "personvernerklaering", "cookies", "get to know us",
+}
+FEED_WINDOW_DAYS = 730
+
+
+def feed_link(html: str, page_url: str) -> str | None:
+    """The site's own posts feed declared in <link rel="alternate">: RSS/Atom only (no oEmbed), not a comments feed,
+    and on the page's registered domain (a third-party feed host is never followed)."""
+    from html.parser import HTMLParser
+    import urllib.parse
+
+    found: list[str] = []
+
+    class _Links(HTMLParser):
+        def handle_starttag(self, tag, attrs):  # type: ignore[no-untyped-def]
+            if tag != "link":
+                return
+            a = {k.casefold(): (v or "") for k, v in attrs}
+            if "alternate" not in a.get("rel", "").casefold().split() or a.get("type", "").casefold() not in FEED_TYPES:
+                return
+            href = a.get("href", "").strip()
+            label = (href + " " + a.get("title", "")).casefold()
+            if not href or "comment" in label or "kommentar" in label:
+                return
+            found.append(urllib.parse.urljoin(page_url, href))
+
+    try:
+        _Links().feed(str(html or "")[:400_000])
+    except Exception:
+        return None
+    site = _reg_domain(page_url)
+    for url in found:
+        if urllib.parse.urlparse(url).scheme in {"http", "https"} and _reg_domain(url) == site:
+            return url
+    return None
+
+
+def _feed_date(value: str) -> str | None:
+    from datetime import datetime, timezone
+    from email.utils import parsedate_to_datetime
+
+    value = str(value or "").strip()
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def parse_feed_items(xml_text: str, *, feed_url: str, site_domain: str, now: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Posts from an RSS 2.0 or Atom feed. Kept: a title, a parseable date within the last FEED_WINDOW_DAYS days (not in
+    the future), a link on the site's own registered domain. Dropped: theme/CMS placeholders (Hello world, lorem ipsum,
+    page names such as 'Om oss') and repeated titles. Never raises."""
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timedelta
+
+    try:
+        root = ET.fromstring(str(xml_text or "")[:1_000_000].encode("utf-8"))
+    except Exception:
+        return []
+    now_dt = datetime.fromisoformat(str(now).replace("Z", "+00:00"))
+    oldest = (now_dt - timedelta(days=FEED_WINDOW_DAYS)).isoformat()
+    newest = (now_dt + timedelta(days=1)).isoformat()
+    site = _reg_domain("https://" + str(site_domain or ""))
+    items: dict[str, dict[str, Any]] = {}
+    for node in root.iter():
+        if node.tag.rsplit("}", 1)[-1] not in {"item", "entry"}:
+            continue
+        title, date, link = "", None, ""
+        for child in node:
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "title":
+                title = re.sub(r"\s+", " ", "".join(child.itertext())).strip()
+            elif tag in {"pubDate", "published", "date"} or (tag == "updated" and date is None):
+                date = _feed_date("".join(child.itertext())) or date
+            elif tag == "link":
+                href = child.get("href")
+                if href is not None:
+                    if child.get("rel") in (None, "alternate") and not link:
+                        link = href
+                elif not link:
+                    link = "".join(child.itertext()).strip()
+        if not title or not date or not (oldest <= date <= newest):
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", _ascii(title)).strip()
+        if not key or key in PLACEHOLDER_TITLES or "lorem ipsum" in key or key.startswith("lorem "):
+            continue
+        url = urllib.parse.urljoin(feed_url, link) if link else ""
+        if not url or _reg_domain(url) != site:
+            continue
+        item = {"title": title[:200], "date": date[:10], "type": "feed_post", "url": url, "method": "rss", "published_at": date}
+        if key not in items or items[key]["published_at"] < date:
+            items[key] = item
+    return sorted(items.values(), key=lambda x: x["published_at"], reverse=True)[:limit]

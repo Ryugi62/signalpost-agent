@@ -17,9 +17,9 @@ from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
 from norway_company_agent.footprint.brief import company_brief  # noqa: E402
 from norway_company_agent.footprint.domain import flatten_external_claims  # noqa: E402
-from norway_company_agent.footprint.io import discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
+from norway_company_agent.footprint.io import attach_feed_activity, discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
 from norway_company_agent.footprint.domain import FREE_MAIL  # noqa: E402
-from norway_company_agent.budget import DEFAULT_LIMIT, REGISTRY_CATEGORIES, RequestBudget, plan_shares  # noqa: E402
+from norway_company_agent.budget import DEFAULT_LIMIT, REGISTRY_CATEGORIES, RequestBudget, plan_shares, registry_reserve  # noqa: E402
 from norway_company_agent.http_gate import charging, install_request_gate  # noqa: E402
 from norway_company_agent.http import fetch_json  # noqa: E402
 from norway_company_agent.official import BRREG_GROUP  # noqa: E402
@@ -67,13 +67,14 @@ def main() -> None:
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website,website_discovery,jobs,wikidata")
     parser.add_argument("--deadline-minutes", type=float, default=38.0, help="After this, remaining companies skip website crawling/discovery (envelopes still emitted)")
     parser.add_argument("--max-discovery-requests", type=int, default=1650, help="Hard cap on HTTP requests spent on domain discovery per run")
-    parser.add_argument("--nav-days", type=int, default=75, help="NAV vacancy-feed window in days")
+    parser.add_argument("--nav-days", type=int, default=45, help="NAV vacancy-feed window in days (45 days hold 97%% of active ads, measured 2026-10-04)")
     parser.add_argument("--max-outbound-requests", type=int, default=DEFAULT_LIMIT,
                         help="Hard ceiling on every outbound HTTP request of the run (registry, sites, NAV, Wikidata, robots.txt, retries, redirects)")
     parser.add_argument("--registry-secondary-pages", type=int, default=2, help="Secondary pages read on a registry-declared website")
     parser.add_argument("--budget-scope", choices=["all", "external"], default="all",
                         help="all (default): the ceiling covers every request, registry included. external: registry reads are counted but not capped")
-    parser.add_argument("--financials-floor", type=int, default=0, help="Requests kept back from discovery for annual accounts")
+    parser.add_argument("--financials-floor", type=int, default=-1,
+                        help="Requests kept back from discovery for annual accounts and group structure (-1 = one per company + 2%% + group candidates)")
     args = parser.parse_args()
 
     started_at = utc_now()
@@ -101,7 +102,10 @@ def main() -> None:
         return (_time.monotonic() - run_t0) / 60.0 > args.deadline_minutes
 
     # Budget plan, part 1: the batch reads are cheap and fixed; set their ceilings before any request.
-    pre_plan = plan_shares(budget.limit, len(orgs), registry_sites=sum(1 for p in profiles if p.get("website")), financials_floor=args.financials_floor, nav_pages=150)
+    nav_pages = int(args.nav_days * 2.2) + 10  # the feed carries ~1.9 pages per day (all states)
+    strict = args.budget_scope == "all"
+    pre_floor = (registry_reserve(len(orgs)) if args.financials_floor < 0 else args.financials_floor) if strict else 0
+    pre_plan = plan_shares(budget.limit, len(orgs), registry_sites=sum(1 for p in profiles if p.get("website")), financials_floor=pre_floor, nav_pages=nav_pages)
     for category in ("registry_batch", "registry_bulk", "wikidata", "jobs"):
         budget.set_ceiling(category, pre_plan["ceilings"][category])
     batch_reports: dict = {}
@@ -138,9 +142,22 @@ def main() -> None:
         return bool((((profile["evidence"].get("registry_live") or {}).get("value") or {}).get("in_group")))
 
     # Budget plan, part 2: now that the group flags are known, cap the per-company categories.
+    group_candidates = sum(1 for p in profiles if in_group(p))
+    floor = (registry_reserve(len(orgs), group_candidates=group_candidates) if args.financials_floor < 0 else args.financials_floor) if strict else 0
     plan = plan_shares(budget.limit, len(orgs), registry_sites=sum(1 for p in profiles if p.get("website")),
-                       group_candidates=sum(1 for p in profiles if in_group(p)), financials_floor=args.financials_floor, nav_pages=150)
+                       group_candidates=group_candidates, financials_floor=floor, nav_pages=nav_pages)
+    if strict:  # AC-24: annual accounts and group structure are kept back before any website work
+        budget.reserve("financials", floor - group_candidates)
+        budget.reserve("group", group_candidates)
     budget.set_ceiling("website_registry", plan["ceilings"]["website_registry"])
+    budget.set_ceiling("activity_feed", plan["ceilings"]["activity_feed"])
+
+    def read_feed(site: dict) -> None:
+        """AC-23: one feed read for a site that passed the identity gate and declares its own posts feed."""
+        value = site.get("value") if isinstance(site.get("value"), dict) else {}
+        if value.get("feed_link") and not over_deadline() and budget.available("activity_feed") > 0:
+            with charging("activity_feed"):
+                attach_feed_activity(site)
     budget.set_ceiling("website_discovery", 0)  # opened after the registry-website phase with whatever is left
     budget.set_ceiling("financials", plan["wanted"]["financials"])
     budget.set_ceiling("group", plan["wanted"]["group"])
@@ -159,6 +176,7 @@ def main() -> None:
                     website_record, website_metrics = fetch_website(profile.get("website"), max_secondary=args.registry_secondary_pages)
                 profile["evidence"]["website"] = apply_website_identity_gate(profile, website_record)["website"]
                 latencies += website_metrics["latencies_ms"]
+                read_feed(profile["evidence"]["website"])
         return {"latencies_ms": latencies}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -175,7 +193,6 @@ def main() -> None:
     # Discovery gets everything the earlier phases did not use, minus what the NAV feed may still need.
     jobs_left = max(0, budget.snapshot()["ceilings"].get("jobs", 0) - budget.snapshot()["by_category"].get("jobs", 0)) if nav_future is not None else 0
     budget.reserve("jobs", jobs_left)
-    budget.reserve("financials", args.financials_floor)
     budget.set_ceiling("website_discovery", None)
     discovery_start = budget.snapshot()
 
@@ -220,6 +237,7 @@ def main() -> None:
             if site.get("status") == "available" and found.get("source_class") != "registry_linked_company_website":
                 profile["evidence"]["website_registry_unverified"] = site
             profile["evidence"]["website"] = found
+            read_feed(found)
         return metrics
 
     # Discovery in two passes around the per-company registry reads (marginal value per request, measured on a
@@ -271,6 +289,7 @@ def main() -> None:
         return {"latencies_ms": latencies}
 
     budget.release("financials")
+    budget.release("group")
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for metric in pool.map(per_company_registry, profiles):
             operations["latencies_ms"].extend(metric["latencies_ms"])
@@ -353,6 +372,7 @@ def main() -> None:
             "orgs_with_contact_email": sum(1 for p in ordered_profiles if any(c["field"] == "contact_email" for c in p["external_claims"])),
             "orgs_with_self_description": sum(1 for p in ordered_profiles if any(c["field"] == "self_description" for c in p["external_claims"])),
             "orgs_with_dated_activity": sum(1 for p in ordered_profiles if any(c["field"] == "dated_activity" and c["availability"] == "available" for c in p["external_claims"])),
+            "orgs_with_feed_activity": sum(1 for p in ordered_profiles if any(c["field"] == "dated_activity" and c["availability"] == "available" and c.get("method") == "company_site_rss" for c in p["external_claims"])),
             "orgs_with_wikidata": sum(1 for p in ordered_profiles if (p["evidence"].get("wikidata") or {}).get("status") == "available"),
             "registry_sites_proven_by_discovery_gate": sum(1 for p in ordered_profiles if (p["evidence"].get("website") or {}).get("source_class") == "registry_linked_company_website"
                                                           and "deterministic_domain_discovery" in str((((p["evidence"].get("website") or {}).get("value") or {}).get("identity_assessment") or {}).get("method"))),

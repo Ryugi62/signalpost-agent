@@ -16,8 +16,8 @@ from typing import Any, Iterable
 
 from ..evidence import evidence, utc_now
 from ..identity import _sole_org_number, assess_social_identity, assess_website_identity
-from ..website import _fetch_secondary_page, fetch_website
-from .domain import domain_candidates, email_domain_candidate, identity_proof, name_key, name_tokens, parse_wikidata_bindings
+from ..website import SAFE_OPENER, USER_AGENT as SITE_USER_AGENT, _fetch_secondary_page, _robots_allowed, fetch_website
+from .domain import _reg_domain, domain_candidates, parse_feed_items, email_domain_candidate, identity_proof, name_key, name_tokens, parse_wikidata_bindings
 
 USER_AGENT = "signalpost-exact-id-agent/1.0 (+https://github.com/; contact via submit@builderr.ai entry)"
 NAV_FEED = "https://pam-stilling-feed.nav.no"
@@ -269,6 +269,43 @@ def discover_website(profile: dict[str, Any], *, timeout: float = 10.0, max_fetc
     if status == "ambiguous":
         discovery["status"] = "ambiguous"
     return None, discovery, metrics
+
+
+# --- Dated activity from the verified site's own feed (AC-22, AC-23) ---------------------------------
+
+def _get_feed(url: str, max_bytes: int = 1_000_000, timeout: float = 10.0) -> tuple[bytes, str]:
+    request = urllib.request.Request(url, headers={"User-Agent": SITE_USER_AGENT, "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8"})
+    with SAFE_OPENER.open(request, timeout=timeout) as response:
+        return response.read(max_bytes), response.geturl()
+
+
+def attach_feed_activity(site: dict[str, Any], *, now: str | None = None, timeout: float = 10.0) -> int:
+    """For a website record that passed the identity gate and declares its own posts feed, read that feed once and
+    keep its dated posts under value.feed_activity. Returns the number of feed fetches attempted (0 or 1).
+    robots.txt is honoured (normally already cached from the homepage fetch). Errors are recorded, never raised."""
+    value = site.get("value") if isinstance(site.get("value"), dict) else None
+    if site.get("status") != "available" or not value or not (value.get("identity_assessment") or {}).get("publishable"):
+        return 0
+    url = value.get("feed_link")
+    if not url or value.get("feed_activity"):
+        return 0
+    record: dict[str, Any] = {"feed_url": url, "items": [], "retrieved_at": utc_now()}
+    try:
+        if not _robots_allowed(url, timeout):
+            record["error"] = "robots.txt disallows the feed"
+        else:
+            body, final_url = _get_feed(url, timeout=timeout)
+            record["content_sha256"] = hashlib.sha256(body).hexdigest()
+            if _reg_domain(final_url) != _reg_domain(url):
+                record["error"] = "feed redirected off the site's domain"
+            else:
+                record["items"] = parse_feed_items(body.decode("utf-8", errors="replace"), feed_url=final_url,
+                                                   site_domain=value.get("registered_domain") or _reg_domain(value.get("final_url")),
+                                                   now=now or utc_now())
+    except Exception as exc:  # budget refusals and network errors leave an empty, explained record
+        record["error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
+    value["feed_activity"] = record
+    return 1
 
 
 # --- NAV public vacancy feed (UC-2) ---------------------------------------------------------

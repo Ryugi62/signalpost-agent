@@ -14,9 +14,11 @@ from typing import Any
 # limit (registry calls included). The margin covers requests a harness might count differently.
 DEFAULT_LIMIT = 1950
 
-# Order in which the run spends the budget. Fixed batch reads first; then the sources that feed the 50-point
-# recall axis (registry-declared websites, discovery); then per-company registry reads (annual accounts, group).
-PRIORITY = ["registry_batch", "registry_bulk", "wikidata", "jobs", "website_registry", "website_discovery", "financials", "group"]
+# Order in which the run spends the budget. Fixed batch reads first; then registry-declared websites and the feeds of
+# verified sites (about one dated-activity company per two requests); discovery takes the remainder minus the
+# reserve kept for per-company registry reads (annual accounts, group structure), which `registry_reserve` sizes so that
+# every company keeps its latest filed accounts (required envelope section 2) under the strictest budget reading.
+PRIORITY = ["registry_batch", "registry_bulk", "wikidata", "jobs", "website_registry", "activity_feed", "website_discovery", "financials", "group"]
 REGISTRY_CATEGORIES = frozenset({"registry_batch", "registry_bulk", "financials", "group"})
 
 
@@ -128,16 +130,26 @@ def plan_shares(limit: int, n_companies: int, *, registry_sites: int = 0, group_
         "wikidata": math.ceil(n / 400) + 1,
         "jobs": nav_pages + 12,
         "website_registry": pages_per_registry_site * max(0, int(registry_sites)),
+        "activity_feed": max(0, int(registry_sites)) + math.ceil(n / 20),  # one feed read per verified site (registry or discovered)
         "website_discovery": None,  # remainder minus the floor kept for annual accounts
         "financials": n + math.ceil(n / 50),
         "group": max(0, int(group_candidates)),
     }
     left = int(limit)
     ceilings: dict[str, int] = {}
+    floor = max(0, int(financials_floor))
     for category in PRIORITY:
         want = wanted[category]
-        take = max(0, left - int(financials_floor)) if want is None else min(want, left)
+        room = left if category in ("financials", "group") else max(0, left - floor)  # the registry reserve is never lent out
+        take = room if want is None else min(want, room)
         ceilings[category] = max(0, take)
         left -= ceilings[category]
     return {"limit": int(limit), "ceilings": ceilings, "order": list(PRIORITY), "unallocated": left,
             "wanted": {k: v for k, v in wanted.items() if v is not None}}
+
+
+def registry_reserve(n_companies: int, *, group_candidates: int = 0) -> int:
+    """Requests kept back from discovery for the per-company registry reads: one annual-accounts request per company,
+    a 2% retry margin, and the group structure for entities the registry marks as part of a group (AC-24)."""
+    n = max(0, int(n_companies))
+    return n + math.ceil(n / 50) + max(0, int(group_candidates))

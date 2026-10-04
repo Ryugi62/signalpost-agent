@@ -18,6 +18,7 @@ import tldextract
 import trafilatura
 
 from .evidence import evidence
+from .footprint.domain import feed_link
 
 USER_AGENT = "builderr-signalpost-poc/0.1 (+https://builderr.ai)"
 SOCIAL_HOSTS = {
@@ -387,6 +388,7 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
             "dated_activity": _dated_activity(final_url, soup, structured),
             "social_links": _social_links(final_url, soup),
             "structured_organisations": _jsonld_organisations(structured),
+            "feed_link": feed_link(html, final_url),
             "content_sha256": __import__("hashlib").sha256(raw).hexdigest(),
             "extraction_state": _extraction_state(text, soup),
         }

@@ -10,7 +10,7 @@ Raise **external recall** (the only separating axis on the Builderr Signalpost b
 - S4: External requests (discovery + jobs + Wikidata) are **≤ 2 per company on average**, and the whole run takes **≤ 45 min per 1,000 companies** at the default workers.
 - S5: Third-party cost is **$0**, with no credential tied to the entrant's own account.
 - S6 (v2): **Every outbound HTTP request of a run is ≤ 1,950** (registry included, retries, robots.txt and redirect hops included), for 1,000 and 1,100 companies, enforced by a gate that refuses the request before it is sent. Interpretation note: the only published number is Unstop's "2,000 outbound requests"; Builderr's pages say "a fixed time and resource budget". v2 meets the strictest reading.
-- S7 (v2): On the same fixed 1,000-company batch, published websites and social profiles are not lower than v1's, and a never-seen batch audit (≥35 discoveries) has 0 wrong-entity publications.
+- S7 (v2): On the same fixed 1,000-company batch under the strict budget, companies with any external fact (website, social, jobs, dated activity) are not fewer than v1's (which used 7,301 requests), every company keeps its annual-accounts request, and never-seen batch audits (≥35 discoveries) have 0 wrong-entity publications.
 
 ## 2. Non-goals
 No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Meta/Glassdoor/Indeed, and no personal data beyond the public company roles the registry already publishes.
@@ -26,6 +26,8 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - **job claim**: an active NAV (arbeidsplassen) vacancy whose `employer.orgnr` equals the org or one of its subunits.
 - **wikidata bridge**: a Wikidata item whose P2333 equals the org. It yields its website (P856) and social IDs.
 - **request budget**: the run-wide ceiling on outbound HTTP requests, with a ceiling per category in priority order (registry batch, registry bulk, Wikidata, NAV, registry-declared websites, annual accounts, group structure, discovery).
+- **feed activity**: dated posts from the RSS/Atom feed that a verified company site declares in its own `<link rel="alternate">`; they are `dated_activity` claims.
+- **registry reserve**: the requests kept back for one annual-accounts read per company (+2%) and the group structure of `erIKonsern` entities before any website work.
 - **request gate**: the infrastructure hook that asks the request budget before every HTTP request and refuses it unsent when the budget says no.
 - **registry-declared domain**: a domain the registry ties to the entity (its website field, its e-mail address, a subunit's website or e-mail) or that Wikidata's P856 gives. It is a candidate; publishing needs the org number unless the domain spells the full legal name (then a registry-unique contact proof also counts).
 
@@ -61,6 +63,10 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - AC-18 A registry/Wikidata-declared domain whose label is not the full legal name needs the org number.
 - AC-19 Discovery reads secondary pages only when the homepage shows the name (2) or the org number (1); otherwise it stops after one page.
 - AC-20 When the run budget is spent, discovery makes no new fetch and records why.
+- AC-21 Only the first name-generated candidate that resolves is fetched; registry/Wikidata-declared candidates are always tried.
+- AC-22 Feed posts become `dated_activity` only with a title, a date within the last 730 days (not in the future) and a link on the site's own domain; CMS placeholders ("Hello world", lorem ipsum, page names) and repeated titles are dropped.
+- AC-23 The feed is read only for a site that passed the identity gate and declares an RSS/Atom feed on its own domain (no comments feed, no oEmbed): one request, charged to `activity_feed`; a failure is recorded, never raised.
+- AC-24 Under the strict scope, the registry reserve is set aside before any website work, so the plan gives annual accounts at least one request per company for 100, 1,000 and 1,100 companies.
 
 ## 7. Layers
 `src/norway_company_agent/footprint/` holds pure functions (candidates, proof, matching, parsing), which are domain logic with no I/O. The I/O adapters (DNS/HTTP/NAV/Wikidata) sit in the same package's `*_io.py`. The runner script is the infrastructure.
