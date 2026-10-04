@@ -108,6 +108,9 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
     elif len(core) >= 2 and exact_homepage_name:
         score = 0.95
         reasons.append("all normalized legal-name tokens appear together in homepage identity evidence")
+    elif len(core) == 1 and len(core[0]) < 4:
+        score = 0.65
+        reasons.append("single short legal-name token is too generic for a name-only match; exact organisation number required")
     elif len(core) == 1 and exact_homepage_name and substantive_homepage:
         score = 0.95
         reasons.append("single distinctive legal-name token appears in homepage identity evidence with substantive content")
@@ -143,7 +146,7 @@ def assess_social_identity(profile: dict[str, Any], link: dict[str, str]) -> dic
     if core_compact and core_compact in handle_compact:
         score = 0.98
         reason = "normalized legal-name sequence appears in the social handle"
-    elif len(core) == 1 and matched:
+    elif len(core) == 1 and matched and len(core[0]) >= 4:
         score = 0.95
         reason = "single distinctive legal-name token appears in the social handle"
     elif ratio >= 0.75 and len(set(matched)) >= 2:

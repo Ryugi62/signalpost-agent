@@ -76,6 +76,8 @@ def normalize_financials(body: Any) -> dict[str, Any]:
     if not records:
         return {"records": []}
     normalized = []
+    # Latest period first, so every consumer that reads records[0] shows the latest filing.
+    records = sorted(records, key=lambda item: str((item.get("regnskapsperiode") or {}).get("tilDato") or ""), reverse=True)
     for item in records[:3]:
         normalized.append({
             "record_id": item.get("id"),

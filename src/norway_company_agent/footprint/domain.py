@@ -74,7 +74,7 @@ FREE_MAIL = {
 }
 
 
-def email_domain_candidate(email: Any, shared_counts: dict[str, int] | None = None, *, max_shared: int = 3) -> str | None:
+def email_domain_candidate(email: Any, shared_counts: dict[str, int] | None = None, *, max_shared: int = 1) -> str | None:
     """Registry-declared e-mail domain as a site candidate; free-mail and shared (manager/accountant/group) domains excluded."""
     text = str(email or "").strip().casefold()
     if "@" not in text:
@@ -82,8 +82,8 @@ def email_domain_candidate(email: Any, shared_counts: dict[str, int] | None = No
     domain = text.rsplit("@", 1)[1].strip(". ")
     if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", domain) or domain in FREE_MAIL:
         return None
-    if shared_counts is not None and shared_counts.get(domain, 0) > max_shared:
-        return None
+    if shared_counts is None or shared_counts.get(domain, 0) > max_shared:
+        return None  # fail closed: without registry-wide counts, sharing cannot be ruled out
     return domain
 
 
@@ -150,6 +150,8 @@ def identity_proof(
             return {"proof": "none", "reason": "org number appears only on a page listing other org numbers (directory or group page)"}
     if not allow_contact:
         return {"proof": "none", "reason": "truncated-name candidate requires the exact organisation number"}
+    if collisions is None:
+        return {"proof": "none", "reason": "registry-wide collision counts unavailable; only an org-number proof is accepted (fail closed)"}
     tokens = [t for t in name_tokens(profile.get("name")) if t not in STOP]
     compact_page = re.sub(r"[^a-z0-9]", "", _ascii(joined))
     if not tokens or not all(t in compact_page for t in tokens):
@@ -163,7 +165,7 @@ def identity_proof(
     if phone and (collisions is None or phones.get(phone, 0) == 1):
         match = _digits_pattern(phone).search(joined)
         if match:
-            return {"proof": "contact", "reason": "legal name + registry phone (unique to this entity in the registry) on a fetched page", "snippet": match.group(0)}
+            return {"proof": "contact", "reason": "legal name + registry phone (unique to this entity in the registry) on a fetched page", "snippet": "registry phone matched (value withheld; sha256 " + __import__("hashlib").sha256(phone.encode()).hexdigest()[:12] + ")"}
     postcode = re.sub(r"\D", "", str(reg.get("postcode") or ""))
     street_tokens = [t for t in re.findall(r"[a-z]{3,}", _ascii(reg.get("street"))) if t not in {"postboks", "pb"}]
     key = address_key(reg.get("street"), reg.get("postcode"))
@@ -175,7 +177,7 @@ def identity_proof(
     ):
         match = re.search(r"(?<!\d)" + postcode + r"(?!\d)", joined)
         if match:
-            return {"proof": "contact", "reason": "legal name + registry street and postcode (unique to this entity in the registry) on a fetched page", "snippet": f"{' '.join(street_tokens)} … {match.group(0)}"}
+            return {"proof": "contact", "reason": "legal name + registry street and postcode (unique to this entity in the registry) on a fetched page", "snippet": "registry street+postcode matched (value withheld; sha256 " + __import__("hashlib").sha256(str(key).encode()).hexdigest()[:12] + ")"}
     return {"proof": "none", "reason": "name matches but no unique org number, phone or address corroboration"}
 
 
@@ -243,6 +245,12 @@ def _state(status: str | None) -> str:
     }.get(str(status or ""), "failed")
 
 
+def _reg_domain(url: Any) -> str:
+    host = re.sub(r"^https?://", "", str(url or "").casefold()).split("/")[0].split(":")[0]
+    parts = [p for p in host.split(".") if p and p != "www"]
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
 def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
     """Claim-level view (OUTPUT_CONTRACT shape) for the external field families."""
     ev = profile.get("evidence") or {}
@@ -292,7 +300,17 @@ def flatten_external_claims(profile: dict[str, Any]) -> list[dict[str, Any]]:
         claims.append({"field": "job_postings", "value": None, "availability": _state(jobs.get("status") or "not_found"),
                        "source_url": jobs.get("source_url"), "retrieved_at": jobs.get("retrieved_at")})
     wikidata = ev.get("wikidata") or {}
-    for claim in ((wikidata.get("value") or {}).get("claims") or []) if isinstance(wikidata.get("value"), dict) else []:
-        claims.append({**claim, "retrieved_at": wikidata.get("retrieved_at"), "content_sha256": wikidata.get("content_sha256"),
+    wd_claims = ((wikidata.get("value") or {}).get("claims") or []) if isinstance(wikidata.get("value"), dict) else []
+    verified_site = next((c["value"] for c in claims if c["field"] == "official_website" and c["availability"] == "available"), None)
+    wd_site = next((c["value"] for c in wd_claims if c["field"] == "official_website"), None)
+    corroborated = bool(verified_site and wd_site and _reg_domain(verified_site) == _reg_domain(wd_site))
+    have = {(c["field"], c.get("value")) for c in claims}
+    for claim in wd_claims:
+        if claim["field"] == "official_website" or (claim["field"], claim["value"]) in have:
+            continue
+        # Wikidata social IDs are published only when the item's own website matches the verified company site.
+        claims.append({**claim, "availability": "available" if corroborated else "ambiguous",
+                       "retrieved_at": wikidata.get("retrieved_at"), "content_sha256": wikidata.get("content_sha256"),
+                       "corroboration": f"Wikidata P856 {wd_site} matches verified site" if corroborated else "not corroborated by a verified company site",
                        "date_basis": "retrieved_at of the Wikidata SPARQL response (CC0)"})
     return claims

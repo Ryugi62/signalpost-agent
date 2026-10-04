@@ -36,10 +36,13 @@ def test_ac3_contact_proof():
         "name": "SANDNES ELEKTRISKE AS",
         "registry": {"postcode": "4313", "street": "Kvellandstrand 4", "phone": "+47 51 66 00 00"},
     }
+    from norway_company_agent.footprint.domain import address_key
+    unique = {"phone": {"51660000": 1}, "address": {address_key("Kvellandstrand 4", "4313"): 1}}
     page = "Sandnes Elektriske AS – Kvellandstrand 4, 4313 Sandnes"
-    assert identity_proof(profile, [page])["proof"] == "contact"
-    assert identity_proof(profile, ["Sandnes Elektriske – vi leverer strøm"])["proof"] == "none"
-    assert identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"])["proof"] == "contact"
+    assert identity_proof(profile, [page], collisions=unique)["proof"] == "contact"
+    assert identity_proof(profile, [page])["proof"] == "none"  # fail closed without registry-wide counts
+    assert identity_proof(profile, ["Sandnes Elektriske – vi leverer strøm"], collisions=unique)["proof"] == "none"
+    assert identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"], collisions=unique)["proof"] == "contact"
     # single generic token must never pass on name+phone alone without org proof? it may pass with phone
     generic = {"organisation_number": "123456789", "name": "ADMINISTRATOR AS", "registry": {"postcode": "0150", "street": "Gate 1"}}
     assert identity_proof(generic, ["Administrator software for everyone"])["proof"] == "none"
@@ -131,7 +134,9 @@ def test_redirect_to_brand_root_with_sole_org_is_accepted(monkeypatch):
 
 def test_email_domain_candidate():
     from norway_company_agent.footprint.domain import email_domain_candidate
-    assert email_domain_candidate("post@kiship.no") == "kiship.no"
+    assert email_domain_candidate("post@kiship.no", {"kiship.no": 1}) == "kiship.no"
+    assert email_domain_candidate("post@kiship.no") is None  # fail closed without counts
+    assert email_domain_candidate("a@parent.no", {"parent.no": 2}) is None
     assert email_domain_candidate("ola@gmail.com") is None
     assert email_domain_candidate("styret@usbl.no", {"usbl.no": 899}) is None
     assert email_domain_candidate("x@firma.no", {"firma.no": 1}) == "firma.no"
@@ -147,7 +152,7 @@ def test_directory_page_and_shared_phone_rejected():
     assert identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"], collisions=shared)["proof"] == "none"
     unique = {"phone": {"51660000": 1}, "address": {}}
     out = identity_proof(profile, ["Sandnes Elektriske tlf 51 66 00 00"], collisions=unique)
-    assert out["proof"] == "contact" and "51 66 00 00" in out["snippet"]
+    assert out["proof"] == "contact" and "51 66" not in out["snippet"] and "withheld" in out["snippet"]
 
 
 def test_absent_org_still_gets_profile(tmp_path):
@@ -191,3 +196,28 @@ def test_snippet_masks_email():
 def test_other_org_in_odd_grouping_blocks_org_proof():
     profile = {"organisation_number": "892469172", "name": "FJORDSAILING AS"}
     assert identity_proof(profile, ["Org.no: 995 91 6193 MVA Org.no. 892 46 9172 MVA"])["proof"] == "none"
+
+
+def test_wikidata_socials_need_corroboration():
+    wd = {"status": "available", "value": {"claims": [
+        {"field": "official_website", "value": "https://www.foo.no/", "source_url": "https://www.wikidata.org/wiki/Q1"},
+        {"field": "facebook", "value": "https://www.facebook.com/foo", "source_url": "https://www.wikidata.org/wiki/Q1"}]}}
+    bare = flatten_external_claims({"evidence": {"wikidata": wd}})
+    assert {c["field"]: c["availability"] for c in bare}["facebook"] == "ambiguous"
+    site = {"status": "available", "source_url": "https://foo.no/", "value": {"final_url": "https://foo.no/",
+            "identity_assessment": {"publishable": True, "reasons": ["x"]}, "social_links": []}}
+    ok = flatten_external_claims({"evidence": {"wikidata": wd, "website": site}})
+    assert {c["field"]: c["availability"] for c in ok}["facebook"] == "available"
+
+
+def test_short_single_token_needs_org_number():
+    from norway_company_agent.identity import assess_website_identity
+    profile = {"organisation_number": "123456785", "name": "LEK 3 AS", "evidence": {"website": {"value": {
+        "final_url": "https://www.ringo.no/", "title": "Ringo leker", "main_text_excerpt": "Leker for alle " * 20}}}}
+    assert assess_website_identity(profile)["publishable"] is False
+
+
+def test_financial_records_latest_first():
+    from norway_company_agent.official import normalize_financials
+    body = [{"regnskapsperiode": {"tilDato": "2023-12-31"}}, {"regnskapsperiode": {"tilDato": "2025-12-31"}}]
+    assert normalize_financials(body)["records"][0]["period"]["tilDato"] == "2025-12-31"

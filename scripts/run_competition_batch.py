@@ -15,6 +15,7 @@ from norway_company_agent.evidence import utc_now  # noqa: E402
 from norway_company_agent.identity import apply_website_identity_gate  # noqa: E402
 from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
+from norway_company_agent.footprint.brief import company_brief  # noqa: E402
 from norway_company_agent.footprint.domain import flatten_external_claims  # noqa: E402
 from norway_company_agent.footprint.io import discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
 
@@ -112,6 +113,7 @@ def main() -> None:
             "latencies_ms": [item.elapsed_ms for item in metrics] + website_metrics["latencies_ms"] + discovery_metrics["latencies_ms"],
             "dns_lookups": discovery_metrics.get("dns_lookups", 0),
             "discovery_requests": discovery_metrics["requests"],
+            "website_requests": website_metrics["requests"],
         }
         profile["run_metrics"] = metric
         return profile, metric
@@ -137,6 +139,11 @@ def main() -> None:
         }
         resumed_profiles = len(state)
     pending_profiles = [profile for profile in profiles if profile["organisation_number"] not in state]
+    # Spend the capped discovery budget where a site is most likely: staffed companies and registry e-mail first.
+    def _priority(profile: dict) -> tuple:
+        raw = ((profile.get("evidence") or {}).get("registry") or {}).get("value") or {}
+        return (0 if profile.get("employees") else 1, 0 if "@" in str(raw.get("epostadresse") or "") else 1)
+    pending_profiles.sort(key=_priority)
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(enrich, profile): profile["organisation_number"] for profile in pending_profiles}
         for index, future in enumerate(as_completed(futures), 1):
@@ -147,6 +154,7 @@ def main() -> None:
             operations["latencies_ms"].extend(metric["latencies_ms"])
             operations["dns_lookups"] += metric.get("dns_lookups", 0)
             operations["by_module"]["website_discovery"] = operations["by_module"].get("website_discovery", 0) + metric.get("discovery_requests", 0)
+            operations["by_module"]["website_registry"] = operations["by_module"].get("website_registry", 0) + metric.get("website_requests", 0)
             if index % args.checkpoint_every == 0 or index == len(pending_profiles):
                 checkpoint = [state[org] for org in orgs if org in state]
                 write_jsonl(profiles_output, checkpoint)
@@ -178,6 +186,7 @@ def main() -> None:
         batch_reports["jobs"] = jobs_metrics
     for profile in ordered_profiles:
         profile["external_claims"] = flatten_external_claims(profile)
+        profile["company_brief"] = company_brief(profile)
     completed_at = utc_now()
     envelopes = [
         terminal_envelope(profile, run_id=args.run_id, modules=requested_modules, started_at=started_at, completed_at=completed_at)
@@ -203,6 +212,7 @@ def main() -> None:
         "validation": validation,
         "batch_modules": batch_reports,
         "third_party_cost_usd": 0,
+        "contact_proofs_enabled": collisions is not None,
         "external_coverage": {
             "published_websites": sum(1 for p in ordered_profiles if any(c["field"] == "official_website" and c["availability"] == "available" for c in p["external_claims"])),
             "discovered_websites": sum(1 for p in ordered_profiles if (p["evidence"].get("website") or {}).get("source_class") == "discovered_company_website" and (p["evidence"]["website"].get("status") == "available")),

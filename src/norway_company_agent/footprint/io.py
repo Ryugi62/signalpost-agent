@@ -49,7 +49,10 @@ def _page_texts(value: dict[str, Any]) -> list[str]:
     return [str(t or "") for t in texts]
 
 
-def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]]:
+MIN_FULL_SNAPSHOT_ROWS = 1_000_000
+
+
+def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]] | None:
     """One pass over the bulk snapshot: how many entities share each e-mail domain, phone and street+postcode."""
     import csv
     import gzip
@@ -57,8 +60,14 @@ def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]]:
     from .domain import _phone_digits, address_key
 
     out: dict[str, dict[str, int]] = {"email_domain": {}, "phone": {}, "address": {}}
+    rows = 0
     with gzip.open(bulk_path, "rt", encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
+        reader = csv.DictReader(handle)
+        needed = {"epostadresse", "telefon", "forretningsadresse.adresse", "forretningsadresse.postnummer"}
+        if not needed <= set(reader.fieldnames or []):
+            return None  # fail closed: uniqueness cannot be checked
+        for row in reader:
+            rows += 1
             email = (row.get("epostadresse") or "").strip().casefold()
             if "@" in email:
                 domain = email.rsplit("@", 1)[1]
@@ -70,6 +79,8 @@ def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]]:
             key = address_key(row.get("forretningsadresse.adresse"), row.get("forretningsadresse.postnummer"))
             if key:
                 out["address"][key] = out["address"].get(key, 0) + 1
+    if rows < MIN_FULL_SNAPSHOT_ROWS:
+        return None  # fail closed: a partial snapshot would make shared phones/addresses look unique
     return out
 
 
