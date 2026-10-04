@@ -14,6 +14,8 @@ RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>Foo AS » Feed<
 <item><title>Hei, verden!</title><link>https://foo.no/hei-verden/</link><pubDate>Fri, 25 Sep 2026 11:10:42 +0000</pubDate></item>
 <item><title>Hello world!</title><link>https://foo.no/hello-world/</link><pubDate>Fri, 25 Sep 2026 11:10:42 +0000</pubDate></item>
 <item><title>Lorem ipsum dolor sit amet</title><link>https://foo.no/lorem/</link><pubDate>Fri, 25 Sep 2026 11:10:42 +0000</pubDate></item>
+<item><title>Keep in Touch with Site Visitors and Boost Loyalty</title><link>https://foo.no/post/k</link><pubDate>Sun, 01 Jun 2025 10:00:00 +0000</pubDate></item>
+<item><title>Tips for Writing Great Posts that Increase Your Site Traffic</title><link>https://foo.no/post/t</link><pubDate>Sun, 01 Jun 2025 10:00:00 +0000</pubDate></item>
 <item><title>Gammel nyhet</title><link>https://foo.no/gammel/</link><pubDate>Mon, 26 Feb 2018 06:42:57 +0000</pubDate></item>
 <item><title>Fremtidig</title><link>https://foo.no/fremtid/</link><pubDate>Mon, 26 Feb 2029 06:42:57 +0000</pubDate></item>
 <item><title>Annen side</title><link>https://other.no/post/</link><pubDate>Tue, 01 Sep 2026 10:00:00 +0000</pubDate></item>

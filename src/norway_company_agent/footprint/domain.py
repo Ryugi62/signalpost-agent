@@ -375,6 +375,12 @@ PLACEHOLDER_TITLES = {
     "kontakt oss", "contact", "contact us", "home", "hjem", "forside", "uncategorized", "ukategorisert", "test", "personvern",
     "privacy policy", "personvernerklaering", "cookies", "get to know us",
 }
+# Sample posts that site builders (Wix, Squarespace, WordPress themes) ship with a new blog; matched as phrases.
+TEMPLATE_PHRASES = (
+    "keep in touch with site visitors", "tips for writing great posts", "make the most of the season", "design a stunning blog",
+    "grow your blog community", "showcase your work", "spread the word", "expand your reach", "your blog post title",
+    "this is your blog post", "welcome to your blog", "this is the title of your first post", "first blog post", "lorem ipsum",
+)
 FEED_WINDOW_DAYS = 730
 
 
@@ -466,7 +472,7 @@ def parse_feed_items(xml_text: str, *, feed_url: str, site_domain: str, now: str
         if not title or not date or not (oldest <= date <= newest):
             continue
         key = re.sub(r"[^a-z0-9]+", " ", _ascii(title)).strip()
-        if not key or key in PLACEHOLDER_TITLES or "lorem ipsum" in key or key.startswith("lorem "):
+        if not key or key in PLACEHOLDER_TITLES or key.startswith("lorem ") or any(phrase in key for phrase in TEMPLATE_PHRASES):
             continue
         url = urllib.parse.urljoin(feed_url, link) if link else ""
         if not url or _reg_domain(url) != site:
