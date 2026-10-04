@@ -20,7 +20,7 @@ import trafilatura
 from .evidence import evidence
 from .footprint.domain import feed_link
 
-USER_AGENT = "builderr-signalpost-poc/0.1 (+https://builderr.ai)"
+USER_AGENT = "signalpost-exact-id-agent/2.0 (+https://github.com/Ryugi62/signalpost-agent)"  # our own crawler identity, not Builderr's
 SOCIAL_HOSTS = {
     "linkedin.com": "linkedin",
     "facebook.com": "facebook",
@@ -61,7 +61,18 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-SAFE_OPENER = urllib.request.build_opener(SafeRedirectHandler())
+def _tls_context():
+    import ssl
+
+    try:  # the same CA bundle on every OS (a bare macOS Python has none, which turned valid sites into certificate errors)
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+SAFE_OPENER = urllib.request.build_opener(SafeRedirectHandler(), urllib.request.HTTPSHandler(context=_tls_context()))
 
 
 def normalize_homepage(value: str | None) -> str | None:
@@ -90,6 +101,21 @@ def _registered_domain(url: str) -> str:
 _ROBOTS_CACHE: dict[str, Any] = {}
 
 
+class _DisallowAll:
+    @staticmethod
+    def can_fetch(_agent: str, _url: str) -> bool:
+        return False
+
+
+_DISALLOW_ALL = _DisallowAll()  # 5xx robots.txt
+_UNREACHABLE = _DisallowAll()  # robots.txt could not be fetched at all (network/TLS): the host is treated as unreachable
+
+
+def robots_unreachable(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return _ROBOTS_CACHE.get(urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))) is _UNREACHABLE
+
+
 def _robots_allowed(url: str, timeout: float) -> bool:
     assert_public_url(url)
     parsed = urllib.parse.urlparse(url)
@@ -105,12 +131,16 @@ def _robots_allowed(url: str, timeout: float) -> bool:
             parser.parse(response.read().decode("utf-8", errors="replace").splitlines())
         _ROBOTS_CACHE[robots_url] = parser
         return parser.can_fetch(USER_AGENT, url)
-    except Exception:
-        _ROBOTS_CACHE[robots_url] = True
-        # An unavailable robots file is not permission to ignore explicit site terms; callers retain
-        # the URL and can route uncertain domains to review. For this bounded homepage POC, allow one
-        # ordinary GET when robots.txt is absent rather than crawl deeper.
-        return True
+    except urllib.error.HTTPError as exc:
+        # RFC 9309 §2.3.1: a 4xx robots.txt is "unavailable" (crawling allowed); a 5xx is "unreachable" (assume disallow).
+        allowed = 400 <= exc.code < 500
+        _ROBOTS_CACHE[robots_url] = True if allowed else _DISALLOW_ALL
+        return allowed
+    except Exception as exc:
+        if "budget" in str(exc).casefold():
+            return False  # the run's request budget refused the robots read: nothing is fetched, nothing is cached
+        _ROBOTS_CACHE[robots_url] = _UNREACHABLE  # unreachable (network/TLS): assume complete disallow (RFC 9309)
+        return False
 
 
 def _social_links(base_url: str, soup: BeautifulSoup) -> list[dict[str, str]]:
@@ -203,6 +233,10 @@ def normalize_social_url(url: str) -> dict[str, str] | None:
     }[platform]
     if platform == "linkedin":
         parts = parts[:2]
+    elif platform == "facebook":
+        parts = parts[:3] if lowered[0] == "pages" else parts[:1]  # the profile root, not /events, /photos or a post
+    elif platform in {"instagram", "tiktok"}:
+        parts = parts[:1]
     elif platform == "youtube":
         parts = parts[:1] if parts[0].startswith("@") else parts[:2]
     return {"platform": platform, "url": f"https://{canonical_host}/{'/'.join(parts)}"}
@@ -364,6 +398,13 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
     except ValueError as exc:
         return evidence("website", "blocked", source_class, normalized, note=str(exc)), {"requests": 0, "bytes": 0, "latencies_ms": []}
     if not _robots_allowed(normalized, timeout):
+        if robots_unreachable(normalized):
+            if not supplied_scheme and normalized.startswith("https://"):
+                record, metrics = fetch_website("http://" + supplied_url, timeout=timeout, max_bytes=max_bytes, max_secondary=max_secondary,
+                                                source_class=source_class, secondary_gate=secondary_gate)
+                metrics["requests"] += 1
+                return record, metrics
+            return evidence("website", "source_error", source_class, normalized, note="robots.txt unreachable (network/TLS error); site not fetched"), {"requests": 1, "bytes": 0, "latencies_ms": []}
         return evidence("website", "blocked", source_class, normalized, note="robots.txt disallows this user agent"), {"requests": 1, "bytes": 0, "latencies_ms": []}
     started = time.monotonic()
     request = urllib.request.Request(normalized, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"})

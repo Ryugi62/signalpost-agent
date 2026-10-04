@@ -165,9 +165,11 @@ def fetch_subunits_bulk(wanted: set[str], *, timeout: float = 120.0) -> tuple[di
     for org in wanted:
         locations = [loc for loc in found.get(org, []) if not loc.get("closed")]
         digest = hashlib.sha256(json.dumps(locations, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-        out[org] = evidence("locations", "available", "official_subunits", f"https://data.brreg.no/enhetsregisteret/api/underenheter?overordnetEnhet={org}",
-                            value={"locations": locations}, retrieved_at=retrieved_at, content_sha256=digest,
-                            note="Registered workplaces from the Brønnøysund subunit bulk file (one download per run); closed subunits excluded")
+        out[org] = evidence("locations", "available", "official_subunits", SUBUNIT_BULK,
+                            value={"locations": locations}, retrieved_at=retrieved_at, content_sha256=digest, source_row_key=f"overordnetEnhet={org}",
+                            note="Registered workplaces from the Brønnøysund subunit bulk file (one download per run; rows whose overordnetEnhet is this org, "
+                                 f"hash over those rows); closed subunits excluded. Live check: https://data.brreg.no/enhetsregisteret/api/underenheter?overordnetEnhet={org}")
+        out[org]["verify_url"] = f"https://virksomhet.brreg.no/nb/oppslag/enheter/{org}"
     metrics["orgs_with_locations"] = sum(1 for org in wanted if found.get(org))
     return out, metrics
 
@@ -189,12 +191,15 @@ def fetch_roles_bulk(wanted: set[str], *, timeout: float = 120.0) -> tuple[dict[
         return {org: evidence("roles", "source_error", "official_roles", ROLES_BULK, note=note, retrieved_at=retrieved_at) for org in wanted}, metrics
     out = {}
     for org in wanted:
-        url = BRREG_ENTITY.format(org=org) + "/roller"
+        live = BRREG_ENTITY.format(org=org) + "/roller"
         if org in found:
             digest = hashlib.sha256(json.dumps(found[org], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-            out[org] = evidence("roles", "available", "official_roles", url, value=normalize_roles(found[org]), retrieved_at=retrieved_at,
-                                content_sha256=digest, note="Roles from the Brønnøysund roles bulk file (one download per run)")
+            out[org] = evidence("roles", "available", "official_roles", ROLES_BULK, value=normalize_roles(found[org]), retrieved_at=retrieved_at,
+                                content_sha256=digest, source_row_key=org,
+                                note=f"Roles from the Brønnøysund roles bulk file (one download per run; hash over this org's element). Live check: {live}")
         else:
-            out[org] = evidence("roles", "not_found", "official_roles", url, retrieved_at=retrieved_at, note="No roles element for this organisation number in the roles bulk file")
+            out[org] = evidence("roles", "not_found", "official_roles", ROLES_BULK, retrieved_at=retrieved_at, source_row_key=org,
+                                note="No roles element for this organisation number in the roles bulk file")
+        out[org]["verify_url"] = f"https://virksomhet.brreg.no/nb/oppslag/enheter/{org}"
     metrics["orgs_with_roles"] = len(found)
     return out, metrics

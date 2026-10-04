@@ -19,6 +19,7 @@ from norway_company_agent.footprint.brief import company_brief  # noqa: E402
 from norway_company_agent.footprint.domain import flatten_external_claims  # noqa: E402
 from norway_company_agent.footprint.io import attach_feed_activity, discover_website, nav_jobs_for_batch, registry_collisions, wikidata_for_batch  # noqa: E402
 from norway_company_agent.footprint.domain import FREE_MAIL  # noqa: E402
+from norway_company_agent.footprint.refresh_v2 import material_changes  # noqa: E402
 from norway_company_agent.budget import DEFAULT_LIMIT, REGISTRY_CATEGORIES, RequestBudget, plan_shares, registry_reserve  # noqa: E402
 from norway_company_agent.http_gate import charging, install_request_gate  # noqa: E402
 from norway_company_agent.http import fetch_json  # noqa: E402
@@ -62,8 +63,10 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--expected-count", type=int, default=100)
     parser.add_argument("--workers", type=int, default=24)
-    parser.add_argument("--checkpoint-every", type=int, default=25)
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint-every", type=int, default=25, help="Accepted for starter compatibility; unused (a v2 run is phase-based and completes in one pass)")
+    parser.add_argument("--resume", action="store_true", help="Accepted for starter compatibility; unused (see --previous for refresh)")
+    parser.add_argument("--previous", default=None,
+                        help="Profiles JSONL of the previous run to compare against (default: the existing --profiles-output file, which is archived before it is replaced)")
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website,website_discovery,jobs,wikidata")
     parser.add_argument("--deadline-minutes", type=float, default=38.0, help="After this, remaining companies skip website crawling/discovery (envelopes still emitted)")
     parser.add_argument("--max-discovery-requests", type=int, default=1650, help="Hard cap on HTTP requests spent on domain discovery per run")
@@ -152,12 +155,12 @@ def main() -> None:
     budget.set_ceiling("website_registry", plan["ceilings"]["website_registry"])
     budget.set_ceiling("activity_feed", plan["ceilings"]["activity_feed"])
 
-    def read_feed(site: dict) -> None:
+    def read_feed(site: dict, name=None) -> None:
         """AC-23: one feed read for a site that passed the identity gate and declares its own posts feed."""
         value = site.get("value") if isinstance(site.get("value"), dict) else {}
         if value.get("feed_link") and not over_deadline() and budget.available("activity_feed") > 0:
             with charging("activity_feed"):
-                attach_feed_activity(site)
+                attach_feed_activity(site, name=name)
     budget.set_ceiling("website_discovery", 0)  # opened after the registry-website phase with whatever is left
     budget.set_ceiling("financials", plan["wanted"]["financials"])
     budget.set_ceiling("group", plan["wanted"]["group"])
@@ -168,7 +171,7 @@ def main() -> None:
         if "website" in requested_modules:
             from norway_company_agent.evidence import evidence as _ev
             if over_deadline():
-                profile["evidence"]["website"] = _ev("website", "source_error", "registry_linked_company_website", profile.get("website") or "about:blank", note="skipped: run deadline reached")
+                profile["evidence"]["website"] = _ev("website", "blocked", "registry_linked_company_website", profile.get("website") or "about:blank", note="Not requested: run deadline (policy)")
             elif profile.get("website") and budget.available("website_registry") < 2:
                 profile["evidence"]["website"] = budget_blocked("website", "registry_linked_company_website", profile.get("website"))
             else:
@@ -176,7 +179,7 @@ def main() -> None:
                     website_record, website_metrics = fetch_website(profile.get("website"), max_secondary=args.registry_secondary_pages)
                 profile["evidence"]["website"] = apply_website_identity_gate(profile, website_record)["website"]
                 latencies += website_metrics["latencies_ms"]
-                read_feed(profile["evidence"]["website"])
+                read_feed(profile["evidence"]["website"], profile.get("name"))
         return {"latencies_ms": latencies}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -220,9 +223,9 @@ def main() -> None:
                                                         "note": "Registry-linked website already passed the identity gate"}
             return {"latencies_ms": [], "dns_lookups": 0}
         if over_deadline() or budget.available("website_discovery") < 2 and not (site.get("status") == "available"):
-            profile["evidence"]["website_discovery"] = _ev("website_discovery", "blocked" if not over_deadline() else "source_error",
+            profile["evidence"]["website_discovery"] = _ev("website_discovery", "blocked",
                                                            "deterministic_domain_discovery", "about:blank",
-                                                           note=BUDGET_NOTE if not over_deadline() else "skipped: run deadline reached")
+                                                           note=BUDGET_NOTE if not over_deadline() else "Not requested: run deadline (policy)")
             return {"latencies_ms": [], "dns_lookups": 0}
         try:
             with charging("website_discovery"):
@@ -237,7 +240,7 @@ def main() -> None:
             if site.get("status") == "available" and found.get("source_class") != "registry_linked_company_website":
                 profile["evidence"]["website_registry_unverified"] = site
             profile["evidence"]["website"] = found
-            read_feed(found)
+            read_feed(found, profile.get("name"))
         return metrics
 
     # Discovery in two passes around the per-company registry reads (marginal value per request, measured on a
@@ -322,12 +325,30 @@ def main() -> None:
     uninstall_gate()
     for profile in ordered_profiles:
         mark_budget_refusals(profile)
+    # Refresh: compare with the previous run of the same command and preserve that snapshot (never overwritten in place).
+    previous_path = Path(args.previous) if args.previous else (profiles_output if profiles_output.exists() else None)
+    previous_by_org: dict = {}
+    if previous_path is not None and previous_path.exists():
+        for line in previous_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                previous_by_org[row.get("organisation_number")] = row
+        if previous_path == profiles_output:
+            prior_run = next((row.get("run_id") for row in previous_by_org.values() if row.get("run_id")), None) or "previous"
+            archive = profiles_output.with_name(f"{profiles_output.stem}.before-{prior_run}{profiles_output.suffix}")
+            archive.write_bytes(profiles_output.read_bytes())
     for profile in ordered_profiles:
         try:
             profile["external_claims"] = flatten_external_claims(profile)
         except Exception as exc:  # never lose the batch over one profile
             profile["external_claims"] = [{"field": "official_website", "value": None, "availability": "failed", "note": f"{type(exc).__name__}: {str(exc)[:120]}"},
                                           {"field": "job_postings", "value": None, "availability": "failed"}]
+        profile["run_id"] = args.run_id
+        prior = previous_by_org.get(profile["organisation_number"])
+        try:
+            profile["refresh"] = material_changes(prior, profile, previous_run_id=(prior or {}).get("run_id"))
+        except Exception as exc:
+            profile["refresh"] = {"compared": False, "note": f"comparison failed: {type(exc).__name__}"}
         try:
             profile["company_brief"] = company_brief(profile)
         except Exception as exc:
@@ -353,6 +374,10 @@ def main() -> None:
         "expected_count": args.expected_count,
         "emitted_envelopes": len(envelopes),
         "resumed_profiles": resumed_profiles,
+        "refresh": {"previous": str(previous_path) if previous_by_org else None,
+                    "compared_profiles": sum(1 for p in ordered_profiles if (p.get("refresh") or {}).get("compared")),
+                    "profiles_with_changes": sum(1 for p in ordered_profiles if (p.get("refresh") or {}).get("changes")),
+                    "changes": sum(len((p.get("refresh") or {}).get("changes") or []) for p in ordered_profiles)},
         "profiles_fetched_this_run": len(ordered_profiles),
         "modules": requested_modules,
         "registry": registry_metadata,

@@ -60,7 +60,8 @@ def test_ac23_feed_link_choice():
 
 
 def _site(**extra):
-    value = {"final_url": "https://foo.no/", "identity_assessment": {"publishable": True, "reasons": ["x"]}, "social_links": [], "pages": []}
+    value = {"final_url": "https://foo.no/", "identity_assessment": {"publishable": True, "reasons": ["x"], "method": "deterministic_domain_discovery_org_proof_v1"},
+             "social_links": [], "pages": []}
     value.update(extra)
     return {"status": "available", "source_url": "https://foo.no/", "retrieved_at": "t", "value": value}
 

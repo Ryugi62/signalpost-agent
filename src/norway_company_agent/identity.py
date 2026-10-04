@@ -92,9 +92,9 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
     elif is_business_sports_club and "bedriftsidrett" not in normalized_candidate_text and "b i l" not in normalized_candidate_text:
         score = 0.3
         reasons.append("business sports-club entity points to the operating company's site without club evidence")
-    elif org_digits and org_digits in compact_homepage_candidate:
+    elif org_digits and _org_on_page(org_digits, homepage_candidate_text) and _sole_org_number(org_digits, homepage_candidate_text):
         score = 1.0
-        reasons.append("exact organisation number appears in homepage identity evidence")
+        reasons.append("exact organisation number appears in homepage identity evidence, and no other org number does")
     elif (
         org_digits
         and core
@@ -124,7 +124,17 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
         score = 0.3
         reasons.append("registry-linked URL lacks strong exact-entity identity evidence")
     status = "exact" if score >= 0.9 else "review" if score >= 0.8 else "related_or_uncertain"
+    snippet = None
+    if score >= 0.9:  # the text span a reviewer can check: the org number if it is there, else the homepage title/name span
+        match = re.search(r"(?<!\d)" + r"[\s.\u00a0]?".join(org_digits) + r"(?!\d)", candidate_text) if org_digits else None
+        if match:
+            snippet = re.sub(r"\s+", " ", candidate_text[max(0, match.start() - 40): match.end() + 10]).strip()
+        else:
+            snippet = re.sub(r"\s+", " ", str(rendered.get("title") or value.get("title") or ""))[:120] or None
+    if snippet:
+        snippet = re.sub(r"\S*@\S*", "[e-mail]", snippet)  # also a cut-off address at the span edge
     return {
+        "proof_snippet": snippet,
         "status": status,
         "score": score,
         "publishable": status == "exact",

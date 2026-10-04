@@ -33,9 +33,15 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
     sentences: list[dict[str, Any]] = []
     unknowns: list[dict[str, Any]] = []
 
-    def add(text: str, record: dict[str, Any] | None, url: str | None = None) -> None:
+    org = str(profile.get("organisation_number") or "")
+    registry_page = f"https://virksomhet.brreg.no/nb/oppslag/enheter/{org}"
+
+    def add(text: str, record: dict[str, Any] | None, url: str | None = None, verify: str | None = None) -> None:
         record = record or {}
-        sentences.append({"text": text, "source_url": url or record.get("source_url"), "retrieved_at": record.get("retrieved_at")})
+        sentence = {"text": text, "source_url": url or record.get("source_url"), "retrieved_at": record.get("retrieved_at")}
+        if verify or record.get("verify_url"):
+            sentence["verify_url"] = verify or record.get("verify_url")  # human-readable page for the same fact
+        sentences.append(sentence)
 
     name = profile.get("name") or profile.get("organisation_number")
     registry = ev.get("registry") or {}
@@ -47,7 +53,8 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
         parts.append(f"is registered in {place.title()}" if place else "is registered")
         if industry and industry != "Uoppgitt":
             parts.append(f"with industry code '{industry}'")
-        add(" ".join(parts) + ".", registry)
+        founded = str(((registry.get("value") or {}) if isinstance(registry.get("value"), dict) else {}).get("stiftelsesdato") or "")[:10]
+        add(" ".join(parts) + "." + (f" Founded {founded}." if founded else ""), registry, verify=registry_page)
         employees = profile.get("employees")
         if employees:
             add(f"The registry reports {employees} employees.", registry)
@@ -82,7 +89,15 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
             for label, key in (("revenue", "revenue"), ("annual result", "annual_result"), ("equity", "equity")):
                 a, b = prev.get(key), latest.get(key)
                 if a is not None and b is not None:
-                    pct = f" ({(b - a) / a * 100:+.0f}%)" if a > 0 and b >= 0 else ""  # no % across zero or from a loss
+                    pct = ""
+                    if a > 0 and b >= 0:  # no % across zero or from a loss
+                        ratio = (b - a) / a * 100
+                        if round(ratio) == 0:
+                            pct = " (about unchanged)"
+                        elif a < 500_000:
+                            pct = " (from a small base)"  # a percentage from a tiny base reads as a signal it is not
+                        else:
+                            pct = f" ({ratio:+.0f}%)"
                     changes.append(f"{label} {_nok(a)} → {_nok(b)}{pct}")
             if changes:
                 add(f"Change {prev_year}→{year}: " + "; ".join(changes) + ".", fin)
@@ -98,21 +113,55 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
     active = [r for r in roles if not r.get("inactive")]
     ceo = next((r for r in active if r.get("role_code") == "DAGL"), None)
     chair = next((r for r in active if r.get("role_code") == "LEDE"), None)
+
+    def since(role: dict[str, Any]) -> str:
+        return f" (registered {str(role.get('last_changed'))[:10]})" if role.get("last_changed") else ""
+
     if ceo or chair:
         bits = []
         if ceo:
-            bits.append(f"managing director {ceo.get('name')}")
+            bits.append(f"managing director {ceo.get('name')}{since(ceo)}")
         if chair:
-            bits.append(f"board chair {chair.get('name')}")
-        add("Official roles: " + " and ".join(bits) + ".", roles_rec)
+            bits.append(f"board chair {chair.get('name')}{since(chair)}")
+        members = sum(1 for r in active if r.get("role_code") == "MEDL")
+        tail = f"; {members} other board member{'s' if members != 1 else ''}" if members else ""
+        add("Official roles: " + " and ".join(bits) + tail + ".", roles_rec, verify=registry_page)
     elif roles_rec.get("status") == "available":
         unknowns.append({"topic": "leadership", "note": "No active managing director or board chair in the official role register."})
+
+    auditor = next((r for r in active if r.get("role_code") == "REVI"), None)
+    if auditor:
+        ref = f" ({auditor.get('organisation_number')})" if auditor.get("organisation_number") else ""
+        add(f"Auditor: {auditor.get('name')}{ref}.", roles_rec, verify=registry_page)
+
+    group_rec = ev.get("group") or {}
+    gval = group_rec.get("value") if isinstance(group_rec.get("value"), dict) else None
+    if group_rec.get("status") == "available" and gval:
+        nodes: list[dict[str, Any]] = []
+
+        def walk(node: dict[str, Any]) -> None:
+            for child in node.get("children") or []:
+                if isinstance(child, dict):
+                    nodes.append(child)
+                    walk(child)
+
+        walk(gval)
+        me = next((n for n in nodes if str(n.get("organisasjonsnummer")) == org), None)
+        if me and me.get("parentNavn"):
+            share = f" {me.get('grunnlag')}" if me.get("grunnlag") else ""
+            date = f" since {me.get('dato')}" if me.get("dato") else ""
+            top = f"; group top: {gval.get('navn')} ({gval.get('organisasjonsnummer')})" if str(gval.get("organisasjonsnummer")) != str(me.get("parentOrganisasjonsnummer")) else ""
+            add(f"Owned{share} by {me.get('parentNavn')} ({me.get('parentOrganisasjonsnummer')}){date}{top}.", group_rec, verify=registry_page)
+        elif str(gval.get("organisasjonsnummer")) == org:
+            direct = [n for n in nodes if str(n.get("parentOrganisasjonsnummer")) == org]
+            add(f"Parent of a registered group with {len(direct)} subsidiar{'ies' if len(direct) != 1 else 'y'}"
+                + (f", e.g. {', '.join(str(n.get('navn')) for n in direct[:3])}" if direct else "") + ".", group_rec, verify=registry_page)
 
     loc_rec = ev.get("locations") or {}
     locations = ((loc_rec.get("value") or {}).get("locations") or []) if isinstance(loc_rec.get("value"), dict) else []
     if locations:
         places = sorted({str(((l.get("address") or {}).get("kommune") or "")).title() for l in locations} - {""})
-        add(f"{len(locations)} registered workplace(s)" + (f" in {', '.join(places[:5])}" if places else "") + ".", loc_rec)
+        add(f"{len(locations)} registered workplace{'s' if len(locations) != 1 else ''}" + (f" in {', '.join(places[:5])}" if places else "") + ".", loc_rec, verify=registry_page)
 
     claims = profile.get("external_claims") or []
     selfdesc = next((c for c in claims if c.get("field") == "self_description" and c.get("availability") == "available"), None)
@@ -122,22 +171,46 @@ def company_brief(profile: dict[str, Any]) -> dict[str, Any]:
     if site:
         how = "found from its own domain and proven on the site" if "discovery" in str(site.get("method")) else "listed in the registry and verified"
         add(f"Official website {site.get('value')} ({how}: {site.get('identity_reason', '').split(';')[0]}).", site, site.get("source_url"))
-        socials = sorted({c["field"] for c in claims if c.get("availability") == "available" and c.get("field") in {"facebook", "instagram", "linkedin", "youtube", "x", "tiktok"}})
+        socials = sorted({(c["field"], c.get("value")) for c in claims if c.get("availability") == "available" and c.get("field") in {"facebook", "instagram", "linkedin", "youtube", "x", "tiktok"}})
         if socials:
-            add("Company-owned profiles linked from the verified site: " + ", ".join(socials) + ".", site, site.get("source_url"))
+            add("Company-owned profiles linked from the verified site: " + ", ".join(f"{p} ({u})" for p, u in socials[:6]) + ".", site, site.get("source_url"))
     else:
         missing = next((c for c in claims if c.get("field") == "official_website"), {})
-        unknowns.append({"topic": "website", "note": f"No website could be tied to this exact entity ({missing.get('availability', 'not_available')}); checked: " + "; ".join(missing.get("checked") or ["registry website field"])})
+        declared = str(profile.get("website") or "").strip()
+        lead = (f"The registry lists {declared}, but that site does not show this exact entity (it may be a group or brand site), so it is not published"
+                if declared and missing.get("availability") == "ambiguous" else "No website could be tied to this exact entity")
+        unknowns.append({"topic": "website", "note": f"{lead} ({missing.get('availability', 'not_available')}); checked: " + "; ".join(missing.get("checked") or ["registry website field"])})
 
     activity = [c for c in claims if c.get("field") == "dated_activity" and c.get("availability") == "available"]
     if activity:
         latest = activity[0]
-        add(f"Dated activity on the company's own site: {len(activity)} item(s); latest {latest['value'].get('date')} — '{latest['value'].get('title')}'.", None, latest.get("source_url"))
+        n = len(activity)
+        add(f"Dated activity on the company's own site: {n} item{'s' if n != 1 else ''}; latest {latest['value'].get('date')} — '{latest['value'].get('title')}'.", latest, latest.get("source_url"))
     jobs = [c for c in claims if c.get("field") == "job_postings" and c.get("availability") == "available"]
     if jobs:
         titles = "; ".join(str((c.get("value") or {}).get("title")) for c in jobs[:3])
-        add(f"Hiring: {len(jobs)} active NAV vacancy(ies) under this org number or its workplaces, e.g. {titles}.", None, jobs[0].get("source_url"))
+        n = len(jobs)
+        add(f"Hiring: {n} active NAV vacanc{'ies' if n != 1 else 'y'} under this org number or its workplaces, e.g. {titles}.", jobs[0], jobs[0].get("source_url"))
     else:
-        unknowns.append({"topic": "hiring", "note": "No active NAV vacancy under this org number or its registered workplaces in the feed window; other job boards not checked."})
+        state = next((c.get("availability") for c in claims if c.get("field") == "job_postings"), "not_available")
+        if state in {"failed", "blocked"}:
+            unknowns.append({"topic": "hiring", "note": f"The NAV vacancy feed was not read in this run ({state}); hiring is unknown, not zero."})
+        else:
+            unknowns.append({"topic": "hiring", "note": "No active NAV vacancy under this org number or its registered workplaces in the feed window; other job boards not checked."})
 
-    return {"sentences": sentences, "unknowns": unknowns, "method": "deterministic_cited_brief_v1", "llm": False}
+    refresh = profile.get("refresh") or {}
+    if refresh.get("compared"):
+        changed = refresh.get("changes") or []
+        since = f"the previous run ({refresh.get('previous_run_id') or 'earlier snapshot'})"
+        if changed:
+            def short(value: Any) -> str:
+                text = value if isinstance(value, (str, int, float)) or value is None else f"{len(value)} item(s)" if isinstance(value, list) else "changed"
+                return str(text)[:60]
+            listed = "; ".join(f"{c['field']}: {short(c.get('old_value'))} → {short(c.get('new_value'))}" for c in changed[:3])
+            add(f"Since {since}: {len(changed)} material change{'s' if len(changed) != 1 else ''} — {listed}.", {"source_url": changed[0].get("source_url"), "retrieved_at": changed[0].get("retrieved_at")})
+        else:
+            add(f"No material change since {since} in the fields both runs read.", registry)
+        if refresh.get("not_compared"):
+            unknowns.append({"topic": "refresh", "note": "Not compared with the previous run because one run could not read them: " + ", ".join(refresh["not_compared"])})
+
+    return {"sentences": sentences, "unknowns": unknowns, "method": "deterministic_cited_brief_v2", "llm": False}

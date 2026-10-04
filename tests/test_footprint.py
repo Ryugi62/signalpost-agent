@@ -261,7 +261,7 @@ def test_dated_activity_extraction_and_claims():
     assert items[0]["url"] == "https://foo.no/nyheter/a"
     site = {"status": "available", "source_url": "https://foo.no/", "retrieved_at": "t", "value": {"final_url": "https://foo.no/",
             "identity_assessment": {"publishable": True, "reasons": ["x"]}, "social_links": [], "dated_activity": items, "pages": []}}
-    claims = flatten_external_claims({"evidence": {"website": site}})
+    claims = flatten_external_claims({"name": "FOO AS", "evidence": {"website": site}})
     acts = [c for c in claims if c["field"] == "dated_activity"]
     assert len(acts) == 2 and acts[0]["effective_at"] == "2026-09-12" and acts[0]["availability"] == "available"
 

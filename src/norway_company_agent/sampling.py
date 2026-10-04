@@ -141,8 +141,17 @@ def deterministic_financial_filer_sample(
     return selected, metadata
 
 
+def open_bulk_text(path: str | Path):
+    """The Brreg entity snapshot as text, gzip-compressed (as Brønnøysund serves it) or plain CSV (detected by magic bytes)."""
+    with open(path, "rb") as probe:
+        gzipped = probe.read(2) == b"\x1f\x8b"
+    if gzipped:
+        return gzip.open(path, "rt", encoding="utf-8-sig", newline="")
+    return open(path, "rt", encoding="utf-8-sig", newline="")
+
+
 def iter_bulk(path: str | Path) -> Iterable[dict[str, Any]]:
-    with gzip.open(path, "rt", encoding="utf-8-sig", newline="") as handle:
+    with open_bulk_text(path) as handle:
         sample = handle.read(8192)
         handle.seek(0)
         dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")

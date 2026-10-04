@@ -17,9 +17,9 @@ from typing import Any, Iterable
 from ..evidence import evidence, utc_now
 from ..identity import _sole_org_number, assess_social_identity, assess_website_identity
 from ..website import SAFE_OPENER, USER_AGENT as SITE_USER_AGENT, _fetch_secondary_page, _robots_allowed, fetch_website
-from .domain import _reg_domain, domain_candidates, parse_feed_items, email_domain_candidate, identity_proof, name_key, name_tokens, parse_wikidata_bindings
+from .domain import _reg_domain, activity_allowed, domain_candidates, parse_feed_items, email_domain_candidate, identity_proof, name_key, name_tokens, parse_wikidata_bindings
 
-USER_AGENT = "signalpost-exact-id-agent/1.0 (+https://github.com/; contact via submit@builderr.ai entry)"
+USER_AGENT = "signalpost-exact-id-agent/2.0 (+https://github.com/Ryugi62/signalpost-agent)"
 NAV_FEED = "https://pam-stilling-feed.nav.no"
 WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 _DNS_POOL = ThreadPoolExecutor(max_workers=16)
@@ -62,7 +62,9 @@ def registry_collisions(bulk_path: str | Path) -> dict[str, dict[str, int]] | No
 
     out: dict[str, dict[str, int]] = {"email_domain": {}, "phone": {}, "address": {}}
     rows = 0
-    with gzip.open(bulk_path, "rt", encoding="utf-8-sig", newline="") as handle:
+    from ..sampling import open_bulk_text
+
+    with open_bulk_text(bulk_path) as handle:
         reader = csv.DictReader(handle)
         needed = {"epostadresse", "telefon", "forretningsadresse.adresse", "forretningsadresse.postnummer"}
         if not needed <= set(reader.fieldnames or []):
@@ -279,7 +281,7 @@ def _get_feed(url: str, max_bytes: int = 1_000_000, timeout: float = 10.0) -> tu
         return response.read(max_bytes), response.geturl()
 
 
-def attach_feed_activity(site: dict[str, Any], *, now: str | None = None, timeout: float = 10.0) -> int:
+def attach_feed_activity(site: dict[str, Any], *, name: Any = None, now: str | None = None, timeout: float = 10.0) -> int:
     """For a website record that passed the identity gate and declares its own posts feed, read that feed once and
     keep its dated posts under value.feed_activity. Returns the number of feed fetches attempted (0 or 1).
     robots.txt is honoured (normally already cached from the homepage fetch). Errors are recorded, never raised."""
@@ -289,9 +291,8 @@ def attach_feed_activity(site: dict[str, Any], *, now: str | None = None, timeou
     url = value.get("feed_link")
     if not url or value.get("feed_activity"):
         return 0
-    domain = str(value.get("registered_domain") or _reg_domain(value.get("final_url")))
-    if not domain.endswith(".no") and "org_proof" not in str((value.get("identity_assessment") or {}).get("method")):
-        return 0  # a .com/.eu site without the org number may be the parent group's: its news is not this entity's
+    if not activity_allowed(value, name):
+        return 0  # a registry-declared group/brand site: its news is the group's, so the request is not spent
     record: dict[str, Any] = {"feed_url": url, "items": [], "retrieved_at": utc_now()}
     try:
         if not _robots_allowed(url, timeout):
