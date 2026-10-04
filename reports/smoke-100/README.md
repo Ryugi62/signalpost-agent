@@ -19,14 +19,14 @@
 
 Same fixed batch (seed 20261013, 1,000 companies), companies with each external field:
 
-| | v1 (host re-run) | **v2 default** (strict: ≤1,950 requests in total, registry included; final code, clean container) | v2 `--budget-scope external` (≤1,950 third-party requests, registry reads not capped; rc code before the group-site news guard) |
+| | v1 (host re-run) | **v2 default** (strict: ≤1,950 requests in total, registry included; final code, clean container) | v2 `--budget-scope external` (≤1,950 third-party requests, registry reads not capped; final code) |
 |---|---:|---:|---:|
 | Official website | 77 | 48 | **84** |
-| Social profiles (companies / links) | 30 / 54 | 18 / 32 | **33 / 65** |
+| Social profiles (companies / links) | 30 / 54 | 18 / 32 | **34 / 65** |
 | NAV jobs | 3 | 3 | 3 |
-| Dated activity | 3 | 4 | **9** |
+| Dated activity | 3 | 4 | **6** |
 | Annual accounts | all (per-company calls) | 998 | 998 |
-| Requests: total / non-registry (sites, NAV, Wikidata) | 7,304 / 2,304 | **1,929 / 849** | 3,001 / 1,929 |
+| Requests: total / non-registry (sites, NAV, Wikidata) | 7,304 / 2,304 | **1,929 / 849** | 2,999 / 1,928 |
 
 The strict default gives up part of the website budget to keep every company's annual accounts inside 1,950 requests. If Builderr confirms that registry reads are not counted, `--budget-scope external` is the better setting on every external field.
 
