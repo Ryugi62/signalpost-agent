@@ -30,6 +30,8 @@ uv sync --frozen && uv run python scripts/run_competition_batch.py \
   --report out/run-report.json --run-id <id> --expected-count <N>
 ```
 
+Refresh: run the same command again with the same `--profiles-output`, or pass `--previous <earlier profiles.jsonl>` (needed in a clean directory). Each profile then carries `refresh` (changes since that run; fields one run could not read are listed as `not_compared`, never as changes), and the earlier file is kept as `<name>.before-<run_id>.jsonl`. Page text read for identity checks is not written to the output (staff names and phone numbers stay out); profiles keep URLs, titles, hashes, proof snippets and claims.
+
 `--bulk` is the Brønnøysund bulk snapshot (`https://data.brreg.no/enhetsregisteret/api/enheter/lastned/csv`). Every input returns exactly one terminal envelope. `profile.external_claims` lists every external field with an explicit availability state (`available`, `not_available`, `ambiguous`, `blocked`, `failed`).
 
 - Models and APIs: **no LLM and no paid API.** Sources are Brønnøysund open data (NLOD 2.0), NAV's public vacancy feed (open data from arbeidsplassen.nav.no, read with the token NAV publishes at `/api/publicToken`), Wikidata (CC0) and company-owned websites (robots.txt honoured, identifying User-Agent). From company sites only short proof spans and hashes are stored. Ad contact persons and personal phone numbers are never published.
