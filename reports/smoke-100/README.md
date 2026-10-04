@@ -15,18 +15,18 @@
 
 ## v2 (request gate, feed activity, JSON-LD profiles)
 
-- Smoke 100 (same companies): 100/100 envelopes in 5 min 13 s · **407 requests in total** (v1: 915) · 11 websites (6 discovered) · 3 with social · 2 with NAV jobs · 2 with dated activity (both from the site's own feed) · 99/100 with annual accounts.
+- Smoke 100 (same companies), run twice with the one command into the same output: 100/100 envelopes each (5 min 17 s, 5 min 22 s) · **402 requests per run in total** (v1: 915) · 12 websites (6 discovered) · 4 with social · 2 with NAV jobs · 2 with dated activity (site feeds) · 99/100 with annual accounts. The second run compared all 100 profiles with the first (`profile.refresh`): **0 changes, 0 fields not compared**, and the first run's profiles were kept as `smoke-profiles.before-smoke-100-v2-run1.jsonl` (idempotent refresh, prior snapshot preserved). `smoke-report-first-run.json` is the first run's report, `smoke-report.json` the second's.
 
 Same fixed batch (seed 20261013, 1,000 companies), companies with each external field:
 
-| | v1 (host re-run) | **v2 default** (strict: ≤1,950 requests in total, registry included) | v2 `--budget-scope external` (≤1,950 third-party requests, registry reads not capped) |
+| | v1 (host re-run) | **v2 default** (strict: ≤1,950 requests in total, registry included; final code, clean container) | v2 `--budget-scope external` (≤1,950 third-party requests, registry reads not capped; rc code before the group-site news guard) |
 |---|---:|---:|---:|
 | Official website | 77 | 48 | **84** |
-| Social profiles (companies / links) | 30 / 54 | 17 / 30 | **33 / 65** |
+| Social profiles (companies / links) | 30 / 54 | 18 / 32 | **33 / 65** |
 | NAV jobs | 3 | 3 | 3 |
-| Dated activity | 3 | 6 | **9** |
+| Dated activity | 3 | 4 | **9** |
 | Annual accounts | all (per-company calls) | 998 | 998 |
-| Requests: total / non-registry (sites, NAV, Wikidata) | 7,304 / 2,304 | **1,929 / 840** | 3,001 / 1,929 |
+| Requests: total / non-registry (sites, NAV, Wikidata) | 7,304 / 2,304 | **1,929 / 849** | 3,001 / 1,929 |
 
 The strict default gives up part of the website budget to keep every company's annual accounts inside 1,950 requests. If Builderr confirms that registry reads are not counted, `--budget-scope external` is the better setting on every external field.
 

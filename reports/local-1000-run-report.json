@@ -1,10 +1,16 @@
 {
-  "run_id": "linux-v2-fresh8-1000",
-  "started_at": "2026-10-04T11:48:22.830127Z",
-  "completed_at": "2026-10-04T11:53:39.671320Z",
+  "run_id": "linux-v2-final-fresh8-1000",
+  "started_at": "2026-10-04T12:28:19.071480Z",
+  "completed_at": "2026-10-04T12:33:40.692454Z",
   "expected_count": 1000,
   "emitted_envelopes": 1000,
   "resumed_profiles": 0,
+  "refresh": {
+    "previous": null,
+    "compared_profiles": 0,
+    "profiles_with_changes": 0,
+    "changes": 0
+  },
   "profiles_fetched_this_run": 1000,
   "modules": [
     "registry",
@@ -27,21 +33,21 @@
     "absent_from_snapshot": []
   },
   "operations": {
-    "dns_lookups": 448,
+    "dns_lookups": 704,
     "requests": 1929,
     "by_module": {
-      "activity_feed": 18,
-      "financials": 1020,
+      "activity_feed": 13,
+      "financials": 1011,
       "group": 63,
       "jobs": 100,
       "registry_batch": 4,
       "registry_bulk": 2,
-      "website_discovery": 277,
-      "website_registry": 442,
+      "website_discovery": 304,
+      "website_registry": 429,
       "wikidata": 3
     },
-    "p50_ms": 1277,
-    "p95_ms": 2828
+    "p50_ms": 1238,
+    "p95_ms": 2695
   },
   "validation": {
     "passed": true,
@@ -77,10 +83,10 @@
     },
     "jobs": {
       "requests": 100,
-      "bytes": 45394668,
+      "bytes": 45326588,
       "pages": 94,
-      "feed_sha256": "4e3a1303cd059f8cfaef7ddaa5663a33a0f6d1e3480d809cc714376c6b42cdf4",
-      "active_entries": 9194,
+      "feed_sha256": "03d3d50cd0a42b6aca53e1326c806ff7094c473d388928dadfb33afcd2ad4ee9",
+      "active_entries": 9197,
       "name_candidates": 4,
       "details_fetched": 4,
       "orgs_with_jobs": 3
@@ -94,20 +100,20 @@
     "exempt": [],
     "total_outbound": 1929,
     "remaining": 21,
-    "denied": 13,
+    "denied": 22,
     "by_category": {
-      "activity_feed": 18,
-      "financials": 1020,
+      "activity_feed": 13,
+      "financials": 1011,
       "group": 63,
       "jobs": 100,
       "registry_batch": 4,
       "registry_bulk": 2,
-      "website_discovery": 277,
-      "website_registry": 442,
+      "website_discovery": 304,
+      "website_registry": 429,
       "wikidata": 3
     },
     "denied_by_category": {
-      "website_discovery": 13
+      "website_discovery": 22
     },
     "reserved": {
       "jobs": 21
@@ -119,7 +125,6 @@
       "jobs": 121,
       "website_registry": 495,
       "activity_feed": 149,
-      "financials": 1020,
       "group": 63
     },
     "plan": {
@@ -131,8 +136,8 @@
         "jobs": 121,
         "website_registry": 495,
         "activity_feed": 149,
-        "website_discovery": 90,
-        "financials": 1020,
+        "website_discovery": 70,
+        "financials": 1040,
         "group": 63
       },
       "order": [
@@ -154,30 +159,30 @@
         "jobs": 121,
         "website_registry": 495,
         "activity_feed": 149,
-        "financials": 1020,
+        "financials": 1040,
         "group": 63
       }
     },
-    "discovery_phase_started_with": 1411,
-    "after_high_yield_discovery": 1116,
+    "discovery_phase_started_with": 1428,
+    "after_high_yield_discovery": 1138,
     "after_low_yield_discovery": 26,
-    "high_yield_companies": 273,
-    "low_yield_companies": 727
+    "high_yield_companies": 272,
+    "low_yield_companies": 728
   },
   "contact_proofs_enabled": true,
   "external_coverage": {
     "published_websites": 48,
     "discovered_websites": 9,
-    "orgs_with_social": 17,
+    "orgs_with_social": 18,
     "orgs_with_jobs": 3,
-    "orgs_with_contact_email": 27,
-    "orgs_with_self_description": 24,
-    "orgs_with_dated_activity": 6,
-    "orgs_with_feed_activity": 3,
+    "orgs_with_contact_email": 28,
+    "orgs_with_self_description": 25,
+    "orgs_with_dated_activity": 4,
+    "orgs_with_feed_activity": 2,
     "orgs_with_wikidata": 5,
     "registry_sites_proven_by_discovery_gate": 0,
     "orgs_with_financials": 998,
     "orgs_with_roles": 1000,
-    "orgs_with_group": 62
+    "orgs_with_group": 63
   }
 }
