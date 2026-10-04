@@ -112,3 +112,11 @@ def test_ac24_registry_reads_reserved_before_discovery():
         plan = plan_shares(1950, n, registry_sites=110, group_candidates=int(n * 0.05), financials_floor=registry_reserve(n, group_candidates=int(n * 0.05)))
         assert plan["ceilings"]["financials"] >= n
         assert sum(plan["ceilings"].values()) <= 1950
+
+
+def test_ac25_jsonld_same_as_profiles_join_the_social_candidates():
+    from norway_company_agent.website import merge_social_links, structured_social_links
+    anchors = [{"platform": "facebook", "url": "https://facebook.com/foo"}]
+    orgs = [{"@type": "Organization", "name": "Foo AS", "sameAs": ["https://www.facebook.com/foo", "https://www.instagram.com/foo_as/", "https://foo.no/"]}]
+    merged = merge_social_links(anchors, structured_social_links(orgs))
+    assert merged == [{"platform": "facebook", "url": "https://facebook.com/foo"}, {"platform": "instagram", "url": "https://instagram.com/foo_as"}]

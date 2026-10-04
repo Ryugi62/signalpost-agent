@@ -67,6 +67,7 @@ No paid search API, no LLM calls in the official run, no scraping of LinkedIn/Me
 - AC-22 Feed posts become `dated_activity` only with a title, a date within the last 730 days (not in the future) and a link on the site's own domain; CMS placeholders ("Hello world", lorem ipsum, page names) and repeated titles are dropped.
 - AC-23 The feed is read only for a site that passed the identity gate and declares an RSS/Atom feed on its own domain (no comments feed, no oEmbed): one request, charged to `activity_feed`; a failure is recorded, never raised.
 - AC-24 Under the strict scope, the registry reserve is set aside before any website work, so the plan gives annual accounts at least one request per company for 100, 1,000 and 1,100 companies.
+- AC-25 Social profiles the site declares in its own JSON-LD (`Organization.sameAs`) join the footer/link candidates, and the same social-handle identity gate decides publication (no extra request).
 
 ## 7. Layers
 `src/norway_company_agent/footprint/` holds pure functions (candidates, proof, matching, parsing), which are domain logic with no I/O. The I/O adapters (DNS/HTTP/NAV/Wikidata) sit in the same package's `*_io.py`. The runner script is the infrastructure.

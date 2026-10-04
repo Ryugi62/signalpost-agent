@@ -132,6 +132,14 @@ def _social_links(base_url: str, soup: BeautifulSoup) -> list[dict[str, str]]:
     return sorted(found.values(), key=lambda item: (item["platform"], item["url"]))
 
 
+def merge_social_links(*groups: list[dict[str, str]]) -> list[dict[str, str]]:
+    found: dict[tuple[str, str], dict[str, str]] = {}
+    for group in groups:
+        for item in group or []:
+            found.setdefault((item["platform"], item["url"]), item)
+    return sorted(found.values(), key=lambda item: (item["platform"], item["url"]))
+
+
 def structured_social_links(value: Any) -> list[dict[str, str]]:
     found: dict[tuple[str, str], dict[str, str]] = {}
 
@@ -386,12 +394,16 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
             "main_text_excerpt": text[:5000],
             "identity_text_excerpt": _identity_text(soup),
             "dated_activity": _dated_activity(final_url, soup, structured),
-            "social_links": _social_links(final_url, soup),
             "structured_organisations": _jsonld_organisations(structured),
             "feed_link": feed_link(html, final_url),
+        }
+        # AC-25: profiles the site declares in its own JSON-LD (Organization.sameAs) are candidates like footer links;
+        # the same social identity gate decides what is published.
+        value["social_links"] = merge_social_links(_social_links(final_url, soup), structured_social_links(value["structured_organisations"]))
+        value.update({
             "content_sha256": __import__("hashlib").sha256(raw).hexdigest(),
             "extraction_state": _extraction_state(text, soup),
-        }
+        })
         pages = [{"url": final_url, "title": title[:500], "main_text_excerpt": text[:5000], "identity_text_excerpt": value["identity_text_excerpt"], "content_sha256": value["content_sha256"]}]
         social = value["social_links"]
         crawl_errors = []
